@@ -1,29 +1,33 @@
 {
   "expo": {
-    "name": "fintu",
+    "name": "Fintú",
     "slug": "fintu",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#6C63FF"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.enrique.fintu"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#6C63FF"
       },
-      "edgeToEdgeEnabled": true
+      "package": "com.enrique.fintu"
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "scheme": "fintu",
+    "plugins": [
+      "expo-router"
+    ]
   }
 }
