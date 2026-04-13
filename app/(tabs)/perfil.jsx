@@ -1,28 +1,491 @@
-// Perfil de usuario — placeholder con botón de logout para probar
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
-import { COLORS } from '../../constants/colors'
-import { useAuth } from '../../hooks/useAuth'
+// /app/(tabs)/perfil.jsx
+import { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../../constants/colors';
+import { supabase } from '../../services/supabase';
+import { useAuth } from '../../hooks/useAuth';
 
-export default function Perfil() {
-  const { logout, usuario } = useAuth()
-
+// ──────────────────────────────────────────
+// Fila de opción del perfil
+// ──────────────────────────────────────────
+function FilaOpcion({ icono, label, valor, onPress, colorTexto, peligro }) {
   return (
-    <View style={styles.contenedor}>
-      <Text style={styles.texto}>👤 Perfil</Text>
-      <Text style={styles.email}>{usuario?.email}</Text>
-
-      {/* Botón temporal de logout para probar el flujo */}
-      <TouchableOpacity style={styles.boton} onPress={logout}>
-        <Text style={styles.botonTexto}>Cerrar sesión</Text>
-      </TouchableOpacity>
-    </View>
-  )
+    <Pressable
+      style={({ pressed }) => [
+        styles.filaOpcion,
+        pressed && styles.filaOpcionPresionada,
+      ]}
+      onPress={onPress}
+    >
+      <View style={[styles.filaIcono, peligro && styles.filaIconoPeligro]}>
+        <Ionicons
+          name={icono}
+          size={18}
+          color={peligro ? COLORS.error : COLORS.primary}
+        />
+      </View>
+      <Text style={[styles.filaLabel, peligro && { color: COLORS.error }]}>
+        {label}
+      </Text>
+      {valor ? (
+        <Text style={styles.filaValor} numberOfLines={1}>{valor}</Text>
+      ) : null}
+      {!peligro && (
+        <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
+      )}
+    </Pressable>
+  );
 }
 
+// ──────────────────────────────────────────
+// Pantalla de perfil
+// ──────────────────────────────────────────
+export default function PerfilScreen() {
+  const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
+
+  // Estado del usuario
+  const [nombre, setNombre] = useState('');
+  const [email, setEmail] = useState('');
+  const [cargando, setCargando] = useState(true);
+
+  // Modal para editar nombre
+  const [modalVisible, setModalVisible] = useState(false);
+  const [nombreInput, setNombreInput] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  // ──────────────────────────────────────────
+  // Cargar datos del usuario desde Supabase
+  // ──────────────────────────────────────────
+  async function cargarPerfil() {
+    try {
+      setCargando(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setEmail(user.email || '');
+
+      // Buscar nombre en tabla users
+      const { data: perfil } = await supabase
+        .from('users')
+        .select('nombre')
+        .eq('id', user.id)
+        .single();
+
+      const nombreGuardado = perfil?.nombre || user.email?.split('@')[0] || 'Usuario';
+      setNombre(nombreGuardado);
+    } catch (e) {
+      console.error('Error cargando perfil:', e);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      cargarPerfil();
+    }, [])
+  );
+
+  // ──────────────────────────────────────────
+  // Guardar nombre actualizado en Supabase
+  // ──────────────────────────────────────────
+  async function handleGuardarNombre() {
+    const nuevoNombre = nombreInput.trim();
+    if (!nuevoNombre) {
+      Alert.alert('Nombre inválido', 'El nombre no puede estar vacío.');
+      return;
+    }
+
+    try {
+      setGuardando(true);
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Upsert en la tabla users
+      const { error } = await supabase
+        .from('users')
+        .upsert({ id: user.id, nombre: nuevoNombre, email: user.email });
+
+      if (error) throw error;
+
+      setNombre(nuevoNombre);
+      setModalVisible(false);
+    } catch (e) {
+      console.error('Error guardando nombre:', e);
+      Alert.alert('Error', 'No se pudo guardar el nombre.');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // ──────────────────────────────────────────
+  // Cerrar sesión con confirmación
+  // ──────────────────────────────────────────
+  function handleLogout() {
+    Alert.alert(
+      'Cerrar sesión',
+      '¿Estás seguro de que quieres salir?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar sesión',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (e) {
+              Alert.alert('Error', 'No se pudo cerrar la sesión.');
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  // Inicial para el avatar
+  const inicial = nombre.charAt(0).toUpperCase() || '?';
+
+  // ──────────────────────────────────────────
+  // Render principal
+  // ──────────────────────────────────────────
+  return (
+    <View style={[styles.contenedor, { paddingTop: insets.top }]}>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* Título */}
+        <View style={styles.cabecera}>
+          <Text style={styles.titulo}>Perfil</Text>
+        </View>
+
+        {cargando ? (
+          <ActivityIndicator
+            size="large"
+            color={COLORS.primary}
+            style={{ marginTop: 60 }}
+          />
+        ) : (
+          <>
+            {/* Avatar y nombre */}
+            <View style={styles.avatarSeccion}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarTexto}>{inicial}</Text>
+              </View>
+              <Text style={styles.nombre}>{nombre}</Text>
+              <Text style={styles.email}>{email}</Text>
+            </View>
+
+            {/* Sección cuenta */}
+            <Text style={styles.seccionTitulo}>Cuenta</Text>
+            <View style={styles.grupo}>
+              <FilaOpcion
+                icono="person-outline"
+                label="Nombre"
+                valor={nombre}
+                onPress={() => {
+                  setNombreInput(nombre);
+                  setModalVisible(true);
+                }}
+              />
+              <View style={styles.separador} />
+              <FilaOpcion
+                icono="mail-outline"
+                label="Email"
+                valor={email}
+                onPress={() => {}}
+              />
+            </View>
+
+            {/* Sección app */}
+            <Text style={styles.seccionTitulo}>App</Text>
+            <View style={styles.grupo}>
+              <FilaOpcion
+                icono="moon-outline"
+                label="Modo oscuro"
+                valor="Activado"
+                onPress={() => {}}
+              />
+              <View style={styles.separador} />
+              <FilaOpcion
+                icono="cash-outline"
+                label="Moneda"
+                valor="MXN"
+                onPress={() => {}}
+              />
+            </View>
+
+            {/* Sección sesión */}
+            <Text style={styles.seccionTitulo}>Sesión</Text>
+            <View style={styles.grupo}>
+              <FilaOpcion
+                icono="log-out-outline"
+                label="Cerrar sesión"
+                peligro
+                onPress={handleLogout}
+              />
+            </View>
+
+            {/* Versión */}
+            <Text style={styles.version}>Fintú v1.0.0 — MVP</Text>
+
+            <View style={{ height: 40 }} />
+          </>
+        )}
+      </ScrollView>
+
+      {/* ── MODAL EDITAR NOMBRE ── */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <Pressable style={styles.modalContenido}>
+
+              <View style={styles.modalHandle} />
+
+              <Text style={styles.modalTitulo}>Editar nombre</Text>
+
+              <TextInput
+                style={styles.input}
+                value={nombreInput}
+                onChangeText={setNombreInput}
+                placeholder="Tu nombre"
+                placeholderTextColor={COLORS.textSecondary}
+                autoFocus
+                maxLength={40}
+              />
+
+              <View style={styles.modalBotones}>
+                <Pressable
+                  style={styles.botonCancelar}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={styles.botonCancelarTexto}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.botonGuardar}
+                  onPress={handleGuardarNombre}
+                  disabled={guardando}
+                >
+                  {guardando ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.botonGuardarTexto}>Guardar</Text>
+                  )}
+                </Pressable>
+              </View>
+
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────
+// Estilos
+// ──────────────────────────────────────────
 const styles = StyleSheet.create({
-  contenedor: { flex: 1, backgroundColor: COLORS.fondo, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  texto: { fontSize: 24, color: COLORS.texto, fontWeight: '700' },
-  email: { fontSize: 14, color: COLORS.textoSecundario },
-  boton: { backgroundColor: COLORS.error, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 16 },
-  botonTexto: { color: '#fff', fontWeight: '700' },
-})
+  contenedor: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  cabecera: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  titulo: {
+    color: COLORS.textPrimary,
+    fontSize: 28,
+    fontWeight: '700',
+  },
+
+  // Avatar
+  avatarSeccion: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  avatarTexto: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  nombre: {
+    color: COLORS.textPrimary,
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  email: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+  },
+
+  // Secciones
+  seccionTitulo: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  grupo: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    marginHorizontal: 20,
+    overflow: 'hidden',
+  },
+  separador: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginLeft: 56,
+  },
+
+  // Fila de opción
+  filaOpcion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  filaOpcionPresionada: {
+    backgroundColor: COLORS.surfaceLight,
+  },
+  filaIcono: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filaIconoPeligro: {
+    backgroundColor: COLORS.error + '20',
+  },
+  filaLabel: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    flex: 1,
+  },
+  filaValor: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    maxWidth: 140,
+    textAlign: 'right',
+    marginRight: 4,
+  },
+
+  // Versión
+  version: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 32,
+  },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContenido: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalTitulo: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  input: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalBotones: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  botonCancelar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  botonCancelarTexto: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  botonGuardar: {
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  botonGuardarTexto: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+});
