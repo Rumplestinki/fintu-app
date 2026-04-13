@@ -9,25 +9,26 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: COLORS.fondoTarjeta,
-          borderTopColor: COLORS.borde,
+          backgroundColor: COLORS.surface,   // ← corregido: era COLORS.fondoTarjeta
+          borderTopColor: COLORS.border,     // ← corregido: era COLORS.borde
+          borderTopWidth: 1,
           height: 60,
           paddingBottom: 8,
         },
-        tabBarActiveTintColor: COLORS.primario,
-        tabBarInactiveTintColor: COLORS.textoSecundario,
+        tabBarActiveTintColor: COLORS.primary,        // ← corregido: era COLORS.primario
+        tabBarInactiveTintColor: COLORS.textSecondary, // ← corregido: era COLORS.textoSecundario
       }}
     >
-        <Tabs.Screen
+      <Tabs.Screen
         name="index"
         options={{
-            title: 'Inicio',
-            headerShown: false,   // ← agrega esta línea
-            tabBarIcon: ({ color, size }) => (
+          title: 'Inicio',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
-            ),
+          ),
         }}
-        />
+      />
       <Tabs.Screen
         name="gastos"
         options={{

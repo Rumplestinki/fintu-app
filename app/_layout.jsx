@@ -11,24 +11,26 @@ export default function RootLayout() {
   const router = useRouter()
 
   useEffect(() => {
-    if (cargando) return // esperar a que termine de verificar la sesión
+    if (cargando) return
 
     const enAreaAuth = segments[0] === '(auth)'
 
     if (!usuario && !enAreaAuth) {
-      // No hay sesión y está intentando acceder a la app → mandar a login
       router.replace('/(auth)/login')
     } else if (usuario && enAreaAuth) {
-      // Ya tiene sesión y está en pantallas de auth → mandar al dashboard
       router.replace('/(tabs)')
     }
   }, [usuario, cargando, segments])
 
-  // Pantalla de carga mientras se verifica la sesión
   if (cargando) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.fondo }}>
-        <ActivityIndicator size="large" color={COLORS.primario} />
+      <View style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: COLORS.background, // ← corregido: era COLORS.fondo
+      }}>
+        <ActivityIndicator size="large" color={COLORS.primary} /> 
       </View>
     )
   }

@@ -1,8 +1,7 @@
 // app/(tabs)/agregar.jsx
 // Pantalla para registrar un nuevo gasto manualmente
-// Flujo: monto → categoría → descripción → fecha → guardar
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,12 +9,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
+  Animated,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
@@ -23,13 +22,11 @@ import { crearGasto } from '../../services/gastos';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
-// Formatea la fecha como "YYYY-MM-DD" para guardar en Supabase
 const formatearFechaISO = (date) => {
   const d = new Date(date);
   return d.toISOString().split('T')[0];
 };
 
-// Muestra la fecha en formato legible para el usuario
 const formatearFechaLegible = (fechaISO) => {
   const [año, mes, dia] = fechaISO.split('-');
   const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
@@ -37,21 +34,73 @@ const formatearFechaLegible = (fechaISO) => {
   return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
 };
 
+// ─── COMPONENTE TOAST ─────────────────────────────────────
+// Notificación visual dentro de la app, sin Alert nativo
+
+function Toast({ visible, mensaje, tipo = 'exito' }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (visible) {
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.delay(1800),
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[
+      estilos.toast,
+      tipo === 'exito' ? estilos.toastExito : estilos.toastError,
+      { opacity },
+    ]}>
+      <Text style={estilos.toastEmoji}>{tipo === 'exito' ? '✅' : '❌'}</Text>
+      <Text style={estilos.toastTexto}>{mensaje}</Text>
+    </Animated.View>
+  );
+}
+
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
 export default function AgregarGasto() {
-  // ── Estado del formulario ──
   const [monto, setMonto] = useState('');
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [descripcion, setDescripcion] = useState('');
   const [fecha, setFecha] = useState(formatearFechaISO(new Date()));
   const [guardando, setGuardando] = useState(false);
 
-  // ── Manejo del teclado numérico ──
-  const handleTecla = (tecla) => {
-    // Vibración leve en cada tecla
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // Estado del toast
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMensaje, setToastMensaje] = useState('');
+  const [toastTipo, setToastTipo] = useState('exito');
 
+  // ── Reset completo del formulario cada vez que se enfoca la pantalla ──
+  // Esto resuelve que queden los datos al navegar entre tabs
+  useFocusEffect(
+    useCallback(() => {
+      setMonto('');
+      setCategoriaSeleccionada(null);
+      setDescripcion('');
+      setFecha(formatearFechaISO(new Date()));
+      setGuardando(false);
+    }, [])
+  );
+
+  // ── Mostrar toast ──
+  const mostrarToast = (mensaje, tipo = 'exito') => {
+    setToastMensaje(mensaje);
+    setToastTipo(tipo);
+    setToastVisible(false); // reset para re-trigger el useEffect del Toast
+    setTimeout(() => setToastVisible(true), 50);
+  };
+
+  // ── Teclado numérico ──
+  const handleTecla = (tecla) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (tecla === '⌫') {
       setMonto((prev) => prev.slice(0, -1));
       return;
@@ -59,28 +108,25 @@ export default function AgregarGasto() {
     if (tecla === '.' && monto.includes('.')) return;
     if (tecla === '.' && monto === '') return;
     if (monto.length >= 10) return;
-
     setMonto((prev) => prev + tecla);
   };
 
   // ── Seleccionar categoría ──
   const handleCategoria = (cat) => {
-    // Vibración de selección al elegir categoría
     Haptics.selectionAsync();
     setCategoriaSeleccionada(cat);
   };
 
   // ── Guardar gasto ──
   const handleGuardar = async () => {
-    // Vibración media al presionar guardar
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!monto || parseFloat(monto) === 0) {
-      Alert.alert('Falta el monto', 'Escribe cuánto gastaste primero.');
+      mostrarToast('Escribe el monto primero', 'error');
       return;
     }
     if (!categoriaSeleccionada) {
-      Alert.alert('Falta la categoría', '¿En qué gastaste? Elige una categoría.');
+      mostrarToast('Elige una categoría', 'error');
       return;
     }
 
@@ -88,19 +134,23 @@ export default function AgregarGasto() {
     try {
       await crearGasto({
         monto: parseFloat(monto),
-        categoria_id: categoriaSeleccionada.dbId, // número entero para Supabase
+        categoria_id: categoriaSeleccionada.dbId,
         descripcion,
         fecha,
         origen: 'manual',
       });
 
-      Alert.alert('✅ Gasto guardado', `$${monto} en ${categoriaSeleccionada.nombre}`, [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/') },
-      ]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
+
+      // Esperar que el usuario vea el toast antes de navegar
+      setTimeout(() => {
+        router.replace('/(tabs)/');
+      }, 2200);
+
     } catch (error) {
       console.error('Error al guardar gasto:', error);
-      Alert.alert('Error', 'No se pudo guardar el gasto. Intenta de nuevo.');
-    } finally {
+      mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
       setGuardando(false);
     }
   };
@@ -108,62 +158,62 @@ export default function AgregarGasto() {
   // ─── RENDER ───────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={estilos.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Toast flotante — aparece arriba de todo */}
+      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
+
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={estilos.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* ── Header ── */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.btnCancelar}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.txtCancelar}>✕</Text>
+        <View style={estilos.header}>
+          <TouchableOpacity style={estilos.btnCancelar} onPress={() => router.back()}>
+            <Text style={estilos.txtCancelar}>✕</Text>
           </TouchableOpacity>
-          <Text style={styles.titulo}>Nuevo gasto</Text>
+          <Text style={estilos.titulo}>Nuevo gasto</Text>
           <View style={{ width: 36 }} />
         </View>
 
         {/* ── Display del monto ── */}
-        <View style={styles.montoContainer}>
-          <Text style={styles.montoLabel}>¿Cuánto gastaste?</Text>
-          <Text style={[styles.montoDisplay, !monto && styles.montoPlaceholder]}>
+        <View style={estilos.montoContainer}>
+          <Text style={estilos.montoLabel}>¿Cuánto gastaste?</Text>
+          <Text style={[estilos.montoDisplay, !monto && estilos.montoPlaceholder]}>
             {monto ? `$${monto}` : '$0'}
           </Text>
-          <Text style={styles.monedaLabel}>MXN</Text>
+          <Text style={estilos.monedaLabel}>MXN</Text>
         </View>
 
-        {/* ── Teclado numérico personalizado ── */}
-        <View style={styles.teclado}>
+        {/* ── Teclado numérico ── */}
+        <View style={estilos.teclado}>
           {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map((tecla) => (
             <TouchableOpacity
               key={tecla}
-              style={[styles.tecla, tecla === '⌫' && styles.teclaBorrar]}
+              style={[estilos.tecla, tecla === '⌫' && estilos.teclaBorrar]}
               onPress={() => handleTecla(tecla)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.teclaTxt, tecla === '⌫' && styles.teclaBorrarTxt]}>
+              <Text style={[estilos.teclaTxt, tecla === '⌫' && estilos.teclaBorrarTxt]}>
                 {tecla}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ── Selector de categorías ── */}
-        <View style={styles.seccion}>
-          <Text style={styles.seccionTitulo}>Categoría</Text>
-          <View style={styles.categoriasGrid}>
+        {/* ── Categorías ── */}
+        <View style={estilos.seccion}>
+          <Text style={estilos.seccionTitulo}>Categoría</Text>
+          <View style={estilos.categoriasGrid}>
             {CATEGORIAS.map((cat) => {
               const seleccionada = categoriaSeleccionada?.id === cat.id;
               return (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
-                    styles.categoriaBtn,
+                    estilos.categoriaBtn,
                     seleccionada && {
                       backgroundColor: cat.color + '30',
                       borderColor: cat.color,
@@ -172,11 +222,8 @@ export default function AgregarGasto() {
                   onPress={() => handleCategoria(cat)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.categoriaIcono}>{cat.icono}</Text>
-                  <Text style={[
-                    styles.categoriaNombre,
-                    seleccionada && { color: cat.color },
-                  ]}>
+                  <Text style={estilos.categoriaIcono}>{cat.icono}</Text>
+                  <Text style={[estilos.categoriaNombre, seleccionada && { color: cat.color }]}>
                     {cat.nombre}
                   </Text>
                 </TouchableOpacity>
@@ -185,13 +232,13 @@ export default function AgregarGasto() {
           </View>
         </View>
 
-        {/* ── Campo de descripción ── */}
-        <View style={styles.seccion}>
-          <Text style={styles.seccionTitulo}>
-            Descripción <Text style={styles.opcional}>(opcional)</Text>
+        {/* ── Descripción ── */}
+        <View style={estilos.seccion}>
+          <Text style={estilos.seccionTitulo}>
+            Descripción <Text style={estilos.opcional}>(opcional)</Text>
           </Text>
           <TextInput
-            style={styles.inputDescripcion}
+            style={estilos.inputDescripcion}
             placeholder="Ej: tacos de canasta, Uber al trabajo…"
             placeholderTextColor={COLORS.textMuted}
             value={descripcion}
@@ -201,41 +248,38 @@ export default function AgregarGasto() {
           />
         </View>
 
-        {/* ── Selector de fecha ── */}
-        <View style={styles.seccion}>
-          <Text style={styles.seccionTitulo}>Fecha</Text>
-          <View style={styles.fechaRow}>
-            {/* Botón: Ayer */}
+        {/* ── Fecha ── */}
+        <View style={estilos.seccion}>
+          <Text style={estilos.seccionTitulo}>Fecha</Text>
+          <View style={estilos.fechaRow}>
             <TouchableOpacity
               style={[
-                styles.fechaBtn,
-                fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && styles.fechaBtnActivo,
+                estilos.fechaBtn,
+                fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaBtnActivo,
               ]}
               onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date(Date.now() - 86400000)));
               }}
             >
-              <Text style={styles.fechaBtnTxt}>Ayer</Text>
+              <Text style={estilos.fechaBtnTxt}>Ayer</Text>
             </TouchableOpacity>
 
-            {/* Botón: Hoy */}
             <TouchableOpacity
               style={[
-                styles.fechaBtn,
-                fecha === formatearFechaISO(new Date()) && styles.fechaBtnActivo,
+                estilos.fechaBtn,
+                fecha === formatearFechaISO(new Date()) && estilos.fechaBtnActivo,
               ]}
               onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date()));
               }}
             >
-              <Text style={styles.fechaBtnTxt}>Hoy</Text>
+              <Text style={estilos.fechaBtnTxt}>Hoy</Text>
             </TouchableOpacity>
 
-            {/* Muestra la fecha seleccionada */}
-            <View style={styles.fechaDisplay}>
-              <Text style={styles.fechaDisplayTxt}>
+            <View style={estilos.fechaDisplay}>
+              <Text style={estilos.fechaDisplayTxt}>
                 📅 {formatearFechaLegible(fecha)}
               </Text>
             </View>
@@ -245,8 +289,8 @@ export default function AgregarGasto() {
         {/* ── Botón Guardar ── */}
         <TouchableOpacity
           style={[
-            styles.btnGuardar,
-            (!monto || !categoriaSeleccionada) && styles.btnGuardarDeshabilitado,
+            estilos.btnGuardar,
+            (!monto || !categoriaSeleccionada) && estilos.btnGuardarDeshabilitado,
           ]}
           onPress={handleGuardar}
           disabled={guardando || !monto || !categoriaSeleccionada}
@@ -255,10 +299,8 @@ export default function AgregarGasto() {
           {guardando ? (
             <ActivityIndicator color={COLORS.white} />
           ) : (
-            <Text style={styles.btnGuardarTxt}>
-              {monto && categoriaSeleccionada
-                ? `Guardar $${monto}`
-                : 'Guardar gasto'}
+            <Text style={estilos.btnGuardarTxt}>
+              {monto && categoriaSeleccionada ? `Guardar $${monto}` : 'Guardar gasto'}
             </Text>
           )}
         </TouchableOpacity>
@@ -270,7 +312,7 @@ export default function AgregarGasto() {
 }
 
 // ─── ESTILOS ──────────────────────────────────────────────
-const styles = StyleSheet.create({
+const estilos = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -278,6 +320,47 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 20,
   },
+
+  // Toast
+  toast: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  toastExito: {
+    backgroundColor: '#1A2A1A',
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  toastError: {
+    backgroundColor: '#2A1A1A',
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  toastEmoji: {
+    fontSize: 18,
+  },
+  toastTexto: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -303,6 +386,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+
+  // Monto
   montoContainer: {
     alignItems: 'center',
     paddingVertical: 24,
@@ -327,6 +412,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
   },
+
+  // Teclado
   teclado: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -355,6 +442,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 20,
   },
+
+  // Secciones
   seccion: {
     paddingHorizontal: 20,
     marginBottom: 24,
@@ -373,6 +462,8 @@ const styles = StyleSheet.create({
     textTransform: 'none',
     letterSpacing: 0,
   },
+
+  // Categorías
   categoriasGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -398,6 +489,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
+
+  // Descripción
   inputDescripcion: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
@@ -408,6 +501,8 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 15,
   },
+
+  // Fecha
   fechaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -444,6 +539,8 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 13,
   },
+
+  // Botón guardar
   btnGuardar: {
     marginHorizontal: 20,
     marginTop: 8,
