@@ -1,30 +1,18 @@
-import { View, Text, StyleSheet } from 'react-native';
+// Dashboard principal — placeholder hasta construirlo completo
+import { View, Text, StyleSheet } from 'react-native'
+import { COLORS } from '../../constants/colors'
 
-// Pantalla principal del dashboard — placeholder inicial
 export default function Dashboard() {
   return (
     <View style={styles.contenedor}>
-      <Text style={styles.titulo}>💜 Fintú</Text>
-      <Text style={styles.subtitulo}>Tus finanzas contigo</Text>
+      <Text style={styles.texto}>🏠 Dashboard</Text>
+      <Text style={styles.subtexto}>Aquí va tu resumen financiero</Text>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
-  contenedor: {
-    flex: 1,
-    backgroundColor: '#0F0F1A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  titulo: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#6C63FF',
-    marginBottom: 8,
-  },
-  subtitulo: {
-    fontSize: 16,
-    color: '#AAAAAA',
-  },
-});
+  contenedor: { flex: 1, backgroundColor: COLORS.fondo, justifyContent: 'center', alignItems: 'center' },
+  texto: { fontSize: 24, color: COLORS.texto, fontWeight: '700' },
+  subtexto: { fontSize: 14, color: COLORS.textoSecundario, marginTop: 8 },
+})
