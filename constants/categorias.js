@@ -1,71 +1,22 @@
-// Categorías de gastos — con emoji, color de fondo y color de texto
-// Es la fuente de verdad para íconos en toda la app
-export const CATEGORIAS = [
-  {
-    id: 1,
-    nombre: 'Comida',
-    emoji: '🍔',
-    color: '#FF6B6B',
-    colorFondo: 'rgba(255, 107, 107, 0.15)',
-  },
-  {
-    id: 2,
-    nombre: 'Transporte',
-    emoji: '🚌',
-    color: '#6C63FF',
-    colorFondo: 'rgba(108, 99, 255, 0.15)',
-  },
-  {
-    id: 3,
-    nombre: 'Renta',
-    emoji: '🏠',
-    color: '#FFC107',
-    colorFondo: 'rgba(255, 193, 7, 0.15)',
-  },
-  {
-    id: 4,
-    nombre: 'Entretenimiento',
-    emoji: '🎬',
-    color: '#FF4081',
-    colorFondo: 'rgba(255, 64, 129, 0.15)',
-  },
-  {
-    id: 5,
-    nombre: 'Salud',
-    emoji: '💊',
-    color: '#4CAF50',
-    colorFondo: 'rgba(76, 175, 80, 0.15)',
-  },
-  {
-    id: 6,
-    nombre: 'Educación',
-    emoji: '📚',
-    color: '#00BCD4',
-    colorFondo: 'rgba(0, 188, 212, 0.15)',
-  },
-  {
-    id: 7,
-    nombre: 'Servicios',
-    emoji: '💡',
-    color: '#FF9800',
-    colorFondo: 'rgba(255, 152, 0, 0.15)',
-  },
-  {
-    id: 8,
-    nombre: 'Suscripciones',
-    emoji: '📱',
-    color: '#9C27B0',
-    colorFondo: 'rgba(156, 39, 176, 0.15)',
-  },
-  {
-    id: 9,
-    nombre: 'Otros',
-    emoji: '📦',
-    color: '#607D8B',
-    colorFondo: 'rgba(96, 125, 139, 0.15)',
-  },
-]
+// constants/categorias.js
+// Categorías de Fintú con su ID numérico que coincide con la tabla "categorias" en Supabase
+// dbId es el int4 que se guarda en gastos.categoria_id
 
-// Función auxiliar: buscar categoría por ID
+export const CATEGORIAS = [
+  { id: 'comida',          dbId: 1, nombre: 'Comida',    icono: '🍔', color: '#FF6B6B' },
+  { id: 'transporte',      dbId: 2, nombre: 'Transporte',icono: '🚗', color: '#4ECDC4' },
+  { id: 'renta',           dbId: 3, nombre: 'Renta',     icono: '🏠', color: '#45B7D1' },
+  { id: 'entretenimiento', dbId: 4, nombre: 'Entrete.',  icono: '🎬', color: '#96CEB4' },
+  { id: 'salud',           dbId: 5, nombre: 'Salud',     icono: '💊', color: '#88D8A3' },
+  { id: 'educacion',       dbId: 6, nombre: 'Educación', icono: '📚', color: '#FFD93D' },
+  { id: 'servicios',       dbId: 7, nombre: 'Servicios', icono: '💡', color: '#C9B1FF' },
+  { id: 'suscripciones',   dbId: 8, nombre: 'Suscripc.', icono: '📱', color: '#FFB347' },
+  { id: 'otros',           dbId: 9, nombre: 'Otros',     icono: '📦', color: '#B0B0B0' },
+];
+
 export const getCategoriaById = (id) =>
-  CATEGORIAS.find((c) => c.id === id) || CATEGORIAS[8] // fallback: Otros
+  CATEGORIAS.find((c) => c.id === id) || CATEGORIAS[8];
+
+// Busca por dbId (número) — útil al leer gastos de Supabase
+export const getCategoriaByDbId = (dbId) =>
+  CATEGORIAS.find((c) => c.dbId === dbId) || CATEGORIAS[8];
