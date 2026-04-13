@@ -17,6 +17,7 @@ import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
+import { obtenerPresupuestosMes } from '../../services/presupuestos';
 import { obtenerUltimosGastos, obtenerGastosMes } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 
@@ -60,10 +61,9 @@ export default function Dashboard() {
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
 
-  // Por ahora presupuesto e ingresos son fijos
-  // (se conectarán a Supabase en la pantalla de presupuestos)
-  const presupuestoMes = 12000;
-  const ingresosMes = 15000;
+    // presupuesto viene de Supabase, ingresos siguen fijos por ahora:
+    const [presupuestoMes, setPresupuestoMes] = useState(0);
+    const ingresosMes = 15000;
 
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
@@ -95,6 +95,12 @@ export default function Dashboard() {
       // Obtener los 5 gastos más recientes para mostrar en el dashboard
       const recientes = await obtenerUltimosGastos(5);
       setUltimosGastos(recientes);
+
+      // Cargar presupuesto total del mes desde Supabase
+      const ahora2 = new Date();
+      const presupuestosData = await obtenerPresupuestosMes(ahora2.getMonth() + 1, ahora2.getFullYear());
+      const totalPresupuestado = presupuestosData.reduce((sum, p) => sum + parseFloat(p.limite), 0);
+      setPresupuestoMes(totalPresupuestado);
 
     } catch (error) {
       console.error('Error cargando dashboard:', error);

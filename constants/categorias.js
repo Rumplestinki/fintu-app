@@ -6,7 +6,7 @@ export const CATEGORIAS = [
   { id: 'comida',          dbId: 1, nombre: 'Comida',    icono: '🍔', color: '#FF6B6B' },
   { id: 'transporte',      dbId: 2, nombre: 'Transporte',icono: '🚗', color: '#4ECDC4' },
   { id: 'renta',           dbId: 3, nombre: 'Renta',     icono: '🏠', color: '#45B7D1' },
-  { id: 'entretenimiento', dbId: 4, nombre: 'Entrete.',  icono: '🎬', color: '#96CEB4' },
+  { id: 'entretenimiento', dbId: 4, nombre: 'Entretenimiento', icono: '🎬', color: '#96CEB4' },
   { id: 'salud',           dbId: 5, nombre: 'Salud',     icono: '💊', color: '#88D8A3' },
   { id: 'educacion',       dbId: 6, nombre: 'Educación', icono: '📚', color: '#FFD93D' },
   { id: 'servicios',       dbId: 7, nombre: 'Servicios', icono: '💡', color: '#C9B1FF' },
