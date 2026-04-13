@@ -1,11 +1,42 @@
-import { Stack } from 'expo-router';
+// Layout raíz — decide si mostrar auth o la app según el estado de sesión
+import { useEffect } from 'react'
+import { Stack, useRouter, useSegments } from 'expo-router'
+import { useAuth } from '../hooks/useAuth'
+import { View, ActivityIndicator } from 'react-native'
+import { COLORS } from '../constants/colors'
 
-// Layout raíz de la aplicación
 export default function RootLayout() {
+  const { usuario, cargando } = useAuth()
+  const segments = useSegments()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (cargando) return // esperar a que termine de verificar la sesión
+
+    const enAreaAuth = segments[0] === '(auth)'
+
+    if (!usuario && !enAreaAuth) {
+      // No hay sesión y está intentando acceder a la app → mandar a login
+      router.replace('/(auth)/login')
+    } else if (usuario && enAreaAuth) {
+      // Ya tiene sesión y está en pantallas de auth → mandar al dashboard
+      router.replace('/(tabs)')
+    }
+  }, [usuario, cargando, segments])
+
+  // Pantalla de carga mientras se verifica la sesión
+  if (cargando) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.fondo }}>
+        <ActivityIndicator size="large" color={COLORS.primario} />
+      </View>
+    )
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(tabs)" />
     </Stack>
-  );
+  )
 }

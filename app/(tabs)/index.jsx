@@ -1,53 +1,30 @@
-// ============================================
-// app/(tabs)/index.jsx
-// Dashboard principal — TEMPORAL con botón de prueba
-// ============================================
+import { View, Text, StyleSheet } from 'react-native';
 
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-
+// Pantalla principal del dashboard — placeholder inicial
 export default function Dashboard() {
-  const router = useRouter();
-
   return (
-    <View style={estilos.contenedor}>
-      <Text style={estilos.titulo}>Fintú 💜</Text>
-
-      {/* BOTÓN TEMPORAL — borrar después de probar Supabase */}
-      <TouchableOpacity
-        style={estilos.boton}
-        onPress={() => router.push('/test-connection')}
-      >
-        <Text style={estilos.textoBoton}>🔌 Probar conexión Supabase</Text>
-      </TouchableOpacity>
+    <View style={styles.contenedor}>
+      <Text style={styles.titulo}>💜 Fintú</Text>
+      <Text style={styles.subtitulo}>Tus finanzas contigo</Text>
     </View>
   );
 }
 
-const estilos = StyleSheet.create({
+const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: '#1A1A2E',
-    justifyContent: 'center',
+    backgroundColor: '#0F0F1A',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'center',
   },
   titulo: {
-    fontSize: 32,
+    fontSize: 42,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 40,
+    color: '#6C63FF',
+    marginBottom: 8,
   },
-  boton: {
-    backgroundColor: '#6C63FF',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    width: '100%',
-  },
-  textoBoton: {
-    color: '#FFFFFF',
+  subtitulo: {
     fontSize: 16,
-    fontWeight: 'bold',
+    color: '#AAAAAA',
   },
 });

@@ -4,12 +4,14 @@
 // ============================================
 
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
+// Cliente de Supabase — punto central de conexión a la base de datos
+import { createClient } from '@supabase/supabase-js'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
 
 // Leer credenciales desde las variables de entorno
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
 
 // Validar que las variables estén definidas
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -26,6 +28,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,  // Necesario en React Native
+    detectSessionInUrl: false, // necesario en React Native
   },
-});
+})
