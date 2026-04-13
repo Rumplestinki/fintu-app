@@ -1,14 +1,25 @@
-// Paleta de colores de Fintú — usar siempre desde aquí, nunca hardcodear
+// Paleta de colores de Fintú — dark mode
+// Importar desde aquí en todas las pantallas
 export const COLORS = {
-  primario: '#6C63FF',       // púrpura principal
-  primarioOscuro: '#5548E0', // hover / pressed
-  fondo: '#0F0F14',          // fondo dark mode
-  fondoTarjeta: '#1A1A24',   // tarjetas y modales
-  fondoInput: '#22222E',     // campos de texto
-  texto: '#FFFFFF',          // texto principal
-  textoSecundario: '#9494AA',// texto secundario / placeholders
-  borde: '#2E2E3E',          // bordes sutiles
-  exito: '#4CAF50',          // verde éxito
-  error: '#FF5252',          // rojo error
-  alerta: '#FFC107',         // amarillo advertencia
+  // Fondos
+  fondo: '#1A1A2E',
+  fondoTarjeta: '#252540',
+  fondoModal: '#1E1E35',
+
+  // Primario
+  primario: '#6C63FF',
+  primarioSuave: 'rgba(108, 99, 255, 0.15)',
+
+  // Texto
+  textoPrimario: '#FFFFFF',
+  textoSecundario: 'rgba(255, 255, 255, 0.6)',
+  textoTerciario: 'rgba(255, 255, 255, 0.35)',
+
+  // Semánticos
+  exito: '#4CAF50',
+  peligro: '#FF6B6B',
+  advertencia: '#FFC107',
+
+  // Borde
+  borde: 'rgba(255, 255, 255, 0.08)',
 }

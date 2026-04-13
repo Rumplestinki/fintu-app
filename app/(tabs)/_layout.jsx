@@ -18,15 +18,16 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: COLORS.textoSecundario,
       }}
     >
-      <Tabs.Screen
+        <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
-          tabBarIcon: ({ color, size }) => (
+            title: 'Inicio',
+            headerShown: false,   // ← agrega esta línea
+            tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
-          ),
+            ),
         }}
-      />
+        />
       <Tabs.Screen
         name="gastos"
         options={{
