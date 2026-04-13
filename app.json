@@ -27,7 +27,8 @@
     },
     "scheme": "fintu",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

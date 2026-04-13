@@ -18,7 +18,9 @@ import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
-import { crearGasto } from '../../services/gastos';
+import { registrarGasto as crearGasto } from '../../services/gastos';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -72,6 +74,7 @@ export default function AgregarGasto() {
   const [descripcion, setDescripcion] = useState('');
   const [fecha, setFecha] = useState(formatearFechaISO(new Date()));
   const [guardando, setGuardando] = useState(false);
+  const [mostrarPicker, setMostrarPicker] = useState(false);
 
   // Estado del toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -248,42 +251,77 @@ export default function AgregarGasto() {
           />
         </View>
 
-        {/* ── Fecha ── */}
+       {/* ── Fecha ── */}
         <View style={estilos.seccion}>
-          <Text style={estilos.seccionTitulo}>Fecha</Text>
-          <View style={estilos.fechaRow}>
+        <Text style={estilos.seccionTitulo}>Fecha</Text>
+        <View style={estilos.fechaRow}>
+
+            {/* Botón Ayer */}
             <TouchableOpacity
-              style={[
+            style={[
                 estilos.fechaBtn,
                 fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaBtnActivo,
-              ]}
-              onPress={() => {
+            ]}
+            onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date(Date.now() - 86400000)));
-              }}
+            }}
             >
-              <Text style={estilos.fechaBtnTxt}>Ayer</Text>
+            <Text style={estilos.fechaBtnTxt}>Ayer</Text>
             </TouchableOpacity>
 
+            {/* Botón Hoy */}
             <TouchableOpacity
-              style={[
+            style={[
                 estilos.fechaBtn,
                 fecha === formatearFechaISO(new Date()) && estilos.fechaBtnActivo,
-              ]}
-              onPress={() => {
+            ]}
+            onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date()));
-              }}
+            }}
             >
-              <Text style={estilos.fechaBtnTxt}>Hoy</Text>
+            <Text style={estilos.fechaBtnTxt}>Hoy</Text>
             </TouchableOpacity>
 
-            <View style={estilos.fechaDisplay}>
-              <Text style={estilos.fechaDisplayTxt}>
+            {/* Botón para abrir el picker de fecha */}
+            <TouchableOpacity
+            style={[
+                estilos.fechaDisplay,
+                // Resaltar si no es hoy ni ayer (fecha personalizada)
+                fecha !== formatearFechaISO(new Date()) &&
+                fecha !== formatearFechaISO(new Date(Date.now() - 86400000)) &&
+                estilos.fechaBtnActivo,
+            ]}
+            onPress={() => {
+                Haptics.selectionAsync();
+                setMostrarPicker(true);
+            }}
+            >
+            <Text style={estilos.fechaDisplayTxt}>
                 📅 {formatearFechaLegible(fecha)}
-              </Text>
-            </View>
-          </View>
+            </Text>
+            </TouchableOpacity>
+
+        </View>
+
+        {/* Selector nativo de fecha — solo visible cuando se abre */}
+        {mostrarPicker && (
+            <DateTimePicker
+            value={new Date(fecha + 'T12:00:00')}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={(evento, fechaSeleccionada) => {
+                setMostrarPicker(false);
+                if (evento.type === 'dismissed') return;
+                if (fechaSeleccionada) {
+                setFecha(formatearFechaISO(fechaSeleccionada));
+                Haptics.selectionAsync();
+                }
+            }}
+            />
+        )}
         </View>
 
         {/* ── Botón Guardar ── */}

@@ -78,11 +78,14 @@ export async function obtenerTodosLosGastos(userId) {
 
 // ──────────────────────────────────────────
 // Registrar un nuevo gasto
+// Agrega user_id automáticamente desde la sesión activa
 // ──────────────────────────────────────────
 export async function registrarGasto(gasto) {
+  const { data: { user } } = await supabase.auth.getUser();
+
   const { data, error } = await supabase
     .from('gastos')
-    .insert([gasto])
+    .insert([{ ...gasto, user_id: user.id }])
     .select()
     .single();
 
@@ -100,4 +103,19 @@ export async function eliminarGasto(gastoId) {
     .eq('id', gastoId);
 
   if (error) throw error;
+}
+
+// ──────────────────────────────────────────
+// Actualizar un gasto existente por ID
+// ──────────────────────────────────────────
+export async function actualizarGasto(gastoId, cambios) {
+  const { data, error } = await supabase
+    .from('gastos')
+    .update(cambios)
+    .eq('id', gastoId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
