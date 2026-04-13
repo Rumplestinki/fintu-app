@@ -7,9 +7,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  SafeAreaView,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { COLORS } from '../../constants/colors'
 import { CATEGORIAS, getCategoriaById } from '../../constants/categorias'
 
@@ -66,6 +66,8 @@ const GASTOS_RECIENTES = [
 
 export default function Dashboard() {
   const router = useRouter()
+  // insets.top = altura exacta de la barra de estado del dispositivo
+  const insets = useSafeAreaInsets()
 
   // Calcular porcentaje del presupuesto usado
   const porcentajeUsado = Math.round(
@@ -90,69 +92,69 @@ export default function Dashboard() {
   const mesCapitalizado =
     mesActual.charAt(0).toUpperCase() + mesActual.slice(1)
 
-  return (
-    <SafeAreaView style={estilos.contenedor}>
+return (
+    <View style={estilos.contenedor}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primario} />
 
+      {/* ── HEADER FIJO — no hace scroll ─────────────── */}
+      <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
+
+        {/* Saludo y avatar */}
+        <View style={estilos.headerTop}>
+          <View>
+            <Text style={estilos.saludo}>
+              Hola, {USUARIO_PRUEBA.nombre} 👋
+            </Text>
+            <Text style={estilos.fechaMes}>{mesCapitalizado}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={estilos.avatar}
+            onPress={() => router.push('/(tabs)/perfil')}
+          >
+            <Text style={estilos.avatarTexto}>
+              {USUARIO_PRUEBA.nombre.charAt(0).toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Balance */}
+        <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
+        <Text style={estilos.montoBalance}>
+          {formatMXN(RESUMEN_PRUEBA.gastadoMes)}
+        </Text>
+        <Text style={estilos.subBalance}>
+          de {formatMXN(RESUMEN_PRUEBA.presupuestoMes)} presupuestados
+        </Text>
+
+        {/* Barra de progreso */}
+        <View style={estilos.barraBg}>
+          <View
+            style={[
+              estilos.barraRelleno,
+              {
+                width: `${Math.min(porcentajeUsado, 100)}%`,
+                backgroundColor:
+                  porcentajeUsado >= 90
+                    ? COLORS.peligro
+                    : porcentajeUsado >= 70
+                    ? COLORS.advertencia
+                    : '#ffffff',
+              },
+            ]}
+          />
+        </View>
+        <Text style={estilos.porcentajeTexto}>
+          {porcentajeUsado}% del presupuesto
+        </Text>
+      </View>
+
+      {/* ── CONTENIDO CON SCROLL — empieza después del header ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.scroll}
       >
-        {/* ── HEADER + BALANCE ─────────────────────────── */}
-        <View style={estilos.header}>
-          {/* Saludo y fecha */}
-          <View style={estilos.headerTop}>
-            <View>
-              <Text style={estilos.saludo}>
-                Hola, {USUARIO_PRUEBA.nombre} 👋
-              </Text>
-              <Text style={estilos.fechaMes}>{mesCapitalizado}</Text>
-            </View>
-
-            {/* Avatar con iniciales */}
-            <TouchableOpacity
-              style={estilos.avatar}
-              onPress={() => router.push('/(tabs)/perfil')}
-            >
-              <Text style={estilos.avatarTexto}>
-                {USUARIO_PRUEBA.nombre.charAt(0).toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Monto gastado */}
-          <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
-          <Text style={estilos.montoBalance}>
-            {formatMXN(RESUMEN_PRUEBA.gastadoMes)}
-          </Text>
-          <Text style={estilos.subBalance}>
-            de {formatMXN(RESUMEN_PRUEBA.presupuestoMes)} presupuestados
-          </Text>
-
-          {/* Barra de progreso del presupuesto */}
-          <View style={estilos.barraBg}>
-            <View
-              style={[
-                estilos.barraRelleno,
-                {
-                  width: `${Math.min(porcentajeUsado, 100)}%`,
-                  // Color rojo si supera el 90%, amarillo si supera el 70%
-                  backgroundColor:
-                    porcentajeUsado >= 90
-                      ? COLORS.peligro
-                      : porcentajeUsado >= 70
-                      ? COLORS.advertencia
-                      : '#ffffff',
-                },
-              ]}
-            />
-          </View>
-          <Text style={estilos.porcentajeTexto}>
-            {porcentajeUsado}% del presupuesto
-          </Text>
-        </View>
-
-        {/* ── TARJETAS DE RESUMEN ───────────────────────── */}
+        {/* Tarjetas mini */}
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
@@ -170,9 +172,8 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* ── ÚLTIMOS MOVIMIENTOS ───────────────────────── */}
+        {/* Últimos movimientos */}
         <View style={estilos.seccion}>
-          {/* Encabezado de sección */}
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
@@ -180,7 +181,6 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Lista de gastos recientes */}
           {GASTOS_RECIENTES.map((gasto) => {
             const categoria = getCategoriaById(gasto.categoria_id)
             return (
@@ -194,12 +194,12 @@ export default function Dashboard() {
           })}
         </View>
 
-        {/* Espacio extra para que el botón flotante no tape contenido */}
-        <View style={{ height: 80 }} />
+        {/* Espacio para el botón flotante */}
+        <View style={{ height: 90 }} />
       </ScrollView>
 
-      {/* ── BOTÓN FLOTANTE AGREGAR GASTO ─────────────── */}
-      <View style={estilos.botonContenedor}>
+      {/* ── BOTÓN FLOTANTE ────────────────────────────── */}
+      <View style={[estilos.botonContenedor, { bottom: insets.bottom + 16 }]}>
         <TouchableOpacity
           style={estilos.botonAgregar}
           onPress={() => router.push('/(tabs)/agregar')}
@@ -208,7 +208,8 @@ export default function Dashboard() {
           <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+
+    </View>
   )
 }
 
@@ -261,7 +262,7 @@ const estilos = StyleSheet.create({
     paddingBottom: 28,
   },
   headerTop: {
-    flexDirection: 'row',
+    flexDirection: 'row',         
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 20,
