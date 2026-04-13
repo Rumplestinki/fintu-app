@@ -63,7 +63,7 @@ export default function Dashboard() {
 
     // presupuesto viene de Supabase, ingresos siguen fijos por ahora:
     const [presupuestoMes, setPresupuestoMes] = useState(0);
-    const ingresosMes = 15000;
+    const [ingresosMes, setIngresosMes] = useState(0);
 
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
@@ -74,11 +74,12 @@ export default function Dashboard() {
         // Buscar nombre en la tabla users, si no usar el email
         const { data: perfil } = await supabase
           .from('users')
-          .select('nombre')
+          .select('nombre, ingreso_mensual')
           .eq('id', user.id)
           .single();
 
         setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
+        setIngresosMes(perfil?.ingreso_mensual || 0);
       }
 
       // Obtener gastos del mes actual
