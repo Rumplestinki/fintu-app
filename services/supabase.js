@@ -6,12 +6,9 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Leer credenciales desde variables de entorno
-// process.env.EXPO_PUBLIC_* funciona en Expo tanto en dev como en builds
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Advertir si faltan variables (sin crashear la app)
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
     '⚠️ Faltan variables de entorno de Supabase. ' +
@@ -19,7 +16,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Crear y exportar el cliente de Supabase
 export const supabase = createClient(
   supabaseUrl ?? 'https://placeholder.supabase.co',
   supabaseAnonKey ?? 'placeholder',
@@ -32,3 +28,18 @@ export const supabase = createClient(
     },
   }
 );
+
+// Limpiar sesión automáticamente si el refresh token expira o es inválido
+// Esto evita que la app quede en un estado roto tras reinstalación o inactividad larga
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') {
+    console.log('✅ Token renovado correctamente');
+  }
+  if (event === 'SIGNED_OUT') {
+    // Limpiar cualquier dato residual de AsyncStorage
+    AsyncStorage.multiRemove([
+      'supabase.auth.token',
+      'supabase.auth.refreshToken',
+    ]);
+  }
+});
