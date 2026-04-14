@@ -1,7 +1,7 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — con botón de voz flotante
+// Dashboard principal de Fintú — con botón de voz y toast de confirmación
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
-  Alert,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -47,7 +47,36 @@ const formatearFechaGasto = (fechaISO) => {
 
 const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
 
+// ─── COMPONENTE TOAST ─────────────────────────────────────
+function Toast({ visible, mensaje, tipo = 'exito' }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (visible) {
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.delay(2500),
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[
+      estilos.toast,
+      tipo === 'exito' ? estilos.toastExito : estilos.toastError,
+      { opacity },
+    ]}>
+      <Text style={estilos.toastEmoji}>{tipo === 'exito' ? '✅' : '❌'}</Text>
+      <Text style={estilos.toastTexto} numberOfLines={2}>{mensaje}</Text>
+    </Animated.View>
+  );
+}
+
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
+import React from 'react';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -62,6 +91,18 @@ export default function Dashboard() {
   const [ingresosMes, setIngresosMes] = useState(0);
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
+
+  // Estado del toast
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMensaje, setToastMensaje] = useState('');
+  const [toastTipo, setToastTipo] = useState('exito');
+
+  const mostrarToast = (mensaje, tipo = 'exito') => {
+    setToastMensaje(mensaje);
+    setToastTipo(tipo);
+    setToastVisible(false);
+    setTimeout(() => setToastVisible(true), 50);
+  };
 
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
@@ -111,7 +152,6 @@ export default function Dashboard() {
 
   // ── Guardar gasto detectado por voz ──
   const handleResultadoVoz = async (datos) => {
-    // Si no se detectó monto, ir a agregar manual
     if (!datos.monto || datos.monto === '0') {
       setModalVozVisible(false);
       router.push('/(tabs)/agregar');
@@ -131,35 +171,29 @@ export default function Dashboard() {
       setModalVozVisible(false);
       setGuardandoVoz(false);
 
-      setTimeout(() => {
-        cargarDatos();
-        Alert.alert(
-          '¡Gasto registrado! 🎙️',
-          `$${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${datos.descripcion ? ` — ${datos.descripcion}` : ''}`,
-          [
-            { text: 'Ver historial', onPress: () => router.push('/(tabs)/gastos') },
-            { text: 'OK' },
-          ]
-        );
-      }, 300);
+      // Recargar datos y mostrar toast en lugar de Alert
+      cargarDatos();
+      const desc = datos.descripcion ? ` — ${datos.descripcion}` : '';
+      mostrarToast(`🎙️ $${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${desc}`);
 
     } catch (error) {
       console.error('Error guardando gasto por voz:', error);
       setGuardandoVoz(false);
-      Alert.alert('Error', 'No se pudo guardar el gasto. Intenta de nuevo.');
+      mostrarToast('No se pudo guardar el gasto. Intenta de nuevo.', 'error');
     }
   };
 
-  // Cálculos
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
   const disponible = ingresosMes - gastadoMes;
   const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
   const mesCapitalizado = mesActual.charAt(0).toUpperCase() + mesActual.slice(1);
 
-  // ─── RENDER ───────────────────────────────────────────────
   return (
     <View style={estilos.contenedor}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+
+      {/* Toast flotante */}
+      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       {/* ── HEADER ── */}
       <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
@@ -308,8 +342,9 @@ export default function Dashboard() {
             <View style={estilos.ejemplos}>
               <Text style={estilos.ejemplosTitulo}>Ejemplos:</Text>
               <Text style={estilos.ejemploTexto}>"Gasté 80 pesos en el Oxxo"</Text>
-              <Text style={estilos.ejemploTexto}>"150 de uber"</Text>
+              <Text style={estilos.ejemploTexto}>"150 de Uber"</Text>
               <Text style={estilos.ejemploTexto}>"Pagué 500 de renta"</Text>
+              <Text style={estilos.ejemploTexto}>"Compré unos tenis Nike en 1200"</Text>
             </View>
 
             {!guardandoVoz && (
@@ -349,6 +384,43 @@ function GastoItem({ gasto, categoria }) {
 const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
+
+  // Toast
+  toast: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  toastExito: {
+    backgroundColor: '#1A2A1A',
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  toastError: {
+    backgroundColor: '#2A1A1A',
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  toastEmoji: { fontSize: 18 },
+  toastTexto: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
 
   header: {
     backgroundColor: COLORS.primary,
@@ -412,23 +484,18 @@ const estilos = StyleSheet.create({
 
   botonesFlotantes: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: 16, right: 16,
     flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
+    gap: 12, alignItems: 'center',
   },
   botonAgregar: {
     flex: 1,
     backgroundColor: COLORS.primary,
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: 16, paddingVertical: 16,
     alignItems: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
   btnVozFlotante: {
@@ -438,9 +505,7 @@ const estilos = StyleSheet.create({
     borderWidth: 1.5, borderColor: COLORS.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
   },
   btnVozEmoji: { fontSize: 24 },
 
@@ -451,10 +516,8 @@ const estilos = StyleSheet.create({
   },
   modalContenido: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 48,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingBottom: 48,
     alignItems: 'center',
   },
   modalHandle: {
@@ -470,10 +533,8 @@ const estilos = StyleSheet.create({
   ejemplos: {
     width: '100%',
     backgroundColor: COLORS.surfaceLight,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    gap: 4,
+    borderRadius: 12, padding: 14,
+    marginBottom: 16, gap: 4,
   },
   ejemplosTitulo: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 4 },
   ejemploTexto: { fontSize: 13, color: COLORS.textPrimary, fontStyle: 'italic' },
