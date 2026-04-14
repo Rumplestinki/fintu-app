@@ -10,13 +10,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://ipdujmzalxbabvephfjk.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_bmXL6uwRz3Ja66ab1_p8pw_XecXvfoI",
-        "EXPO_PUBLIC_IA_MODE": "lmstudio",
-        "EXPO_PUBLIC_LM_STUDIO_BASE_URL": "http://192.168.1.XXX:1234",
-        "EXPO_PUBLIC_LM_STUDIO_MODEL": "qwen3.5-9b",
-        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyAvphFakSUDuL0Xjqxof7g7SCdU8y4WNI0"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       },
       "android": {
         "buildType": "apk"
