@@ -22,7 +22,7 @@ export async function obtenerGastosMes(mes, anio) {
     .eq('user_id', (await supabase.auth.getUser()).data.user.id)
     .gte('fecha', fechaInicio)
     .lte('fecha', fechaFin)
-    .order('fecha', { ascending: false });
+    .order('created_at', { ascending: false }); // ← ordenar por cuándo se registró
 
   if (error) throw error;
   return data;
@@ -30,7 +30,6 @@ export async function obtenerGastosMes(mes, anio) {
 
 // ──────────────────────────────────────────
 // Últimos N gastos — para el dashboard
-// Nombre original conservado tal como lo usa index.jsx
 // ──────────────────────────────────────────
 export async function obtenerUltimosGastos(limite = 5) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -47,7 +46,7 @@ export async function obtenerUltimosGastos(limite = 5) {
       )
     `)
     .eq('user_id', user.id)
-    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false }) // ← ordenar por cuándo se registró
     .limit(limite);
 
   if (error) throw error;
@@ -70,7 +69,7 @@ export async function obtenerTodosLosGastos(userId) {
       )
     `)
     .eq('user_id', userId)
-    .order('fecha', { ascending: false });
+    .order('created_at', { ascending: false }); // ← ordenar por cuándo se registró
 
   if (error) throw error;
   return data;
@@ -78,14 +77,17 @@ export async function obtenerTodosLosGastos(userId) {
 
 // ──────────────────────────────────────────
 // Registrar un nuevo gasto
-// Agrega user_id automáticamente desde la sesión activa
 // ──────────────────────────────────────────
 export async function registrarGasto(gasto) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { data, error } = await supabase
     .from('gastos')
-    .insert([{ ...gasto, user_id: user.id }])
+    .insert([{
+      ...gasto,
+      user_id: user.id,
+      created_at: new Date().toISOString(), // ← timestamp exacto del momento de registro
+    }])
     .select()
     .single();
 
