@@ -1,5 +1,5 @@
 // app/(tabs)/agregar.jsx
-// Pantalla para registrar un nuevo gasto — manual o por voz
+// Pantalla para registrar un nuevo gasto manualmente
 
 import React, { useState, useCallback, useRef } from 'react';
 import {
@@ -20,9 +20,6 @@ import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { sugerirCategoria } from '../../services/ia';
-import BotonVoz from '../../components/BotonVoz'; // ← nuevo
-
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -37,7 +34,6 @@ const formatearFechaLegible = (fechaISO) => {
                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
 };
-
 
 // ─── COMPONENTE TOAST ─────────────────────────────────────
 
@@ -68,7 +64,6 @@ function Toast({ visible, mensaje, tipo = 'exito' }) {
   );
 }
 
-
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
 export default function AgregarGasto() {
@@ -79,17 +74,11 @@ export default function AgregarGasto() {
   const [guardando, setGuardando] = useState(false);
   const [mostrarPicker, setMostrarPicker] = useState(false);
 
-  // Estado del toast
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastTipo, setToastTipo] = useState('exito');
 
-  // Estado de la sugerencia de IA (clasificación por texto)
-  const [sugerenciaIA, setSugerenciaIA] = useState(null);
-  const [clasificando, setClasificando] = useState(false);
-  const timeoutRef = useRef(null);
-
-  // ── Reset completo del formulario al enfocar la pantalla ──
+  // ── Reset completo al enfocar la pantalla ──
   useFocusEffect(
     useCallback(() => {
       setMonto('');
@@ -97,13 +86,9 @@ export default function AgregarGasto() {
       setDescripcion('');
       setFecha(formatearFechaISO(new Date()));
       setGuardando(false);
-      setSugerenciaIA(null);
-      setClasificando(false);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }, [])
   );
 
-  // ── Mostrar toast ──
   const mostrarToast = (mensaje, tipo = 'exito') => {
     setToastMensaje(mensaje);
     setToastTipo(tipo);
@@ -124,48 +109,10 @@ export default function AgregarGasto() {
     setMonto((prev) => prev + tecla);
   };
 
-  // ── Seleccionar categoría manualmente ──
+  // ── Seleccionar categoría ──
   const handleCategoria = (cat) => {
     Haptics.selectionAsync();
     setCategoriaSeleccionada(cat);
-    setSugerenciaIA(null);
-  };
-
-  // ── Clasificar descripción con IA — con debounce ──
-  const handleDescripcionChange = (texto) => {
-    setDescripcion(texto);
-    setSugerenciaIA(null);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-    if (texto.trim().length >= 3) {
-      setClasificando(true);
-      timeoutRef.current = setTimeout(async () => {
-        const sugerencia = await sugerirCategoria(texto);
-        setSugerenciaIA(sugerencia);
-        setClasificando(false);
-      }, 800);
-    } else {
-      setClasificando(false);
-    }
-  };
-
-  // ── Aceptar la sugerencia de la IA ──
-  const aceptarSugerencia = () => {
-    if (sugerenciaIA) {
-      setCategoriaSeleccionada(sugerenciaIA);
-      setSugerenciaIA(null);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-  };
-
-  // ── Callback cuando la IA de voz devuelve datos ──
-  // Rellena el formulario automáticamente con lo que dijo el usuario
-  const handleResultadoVoz = (datos) => {
-    if (datos.monto && datos.monto !== '0') setMonto(datos.monto);
-    if (datos.categoria) setCategoriaSeleccionada(datos.categoria);
-    if (datos.descripcion) setDescripcion(datos.descripcion);
-    setSugerenciaIA(null);
-    mostrarToast('¡Gasto detectado por voz! Revisa y guarda.');
   };
 
   // ── Guardar gasto ──
@@ -204,7 +151,6 @@ export default function AgregarGasto() {
       setGuardando(false);
     }
   };
-
 
   // ─── RENDER ───────────────────────────────────────────────
   return (
@@ -253,17 +199,7 @@ export default function AgregarGasto() {
           ))}
         </View>
 
-        {/* ── Botón de voz — debajo del teclado, fácil con el pulgar ── */}
-        <View style={estilos.seccionVoz}>
-          <View style={estilos.separadorVoz}>
-            <View style={estilos.lineaSeparador} />
-            <Text style={estilos.textoSeparador}>o registra por voz</Text>
-            <View style={estilos.lineaSeparador} />
-          </View>
-          <BotonVoz onResultado={handleResultadoVoz} />
-        </View>
-
-        {/* ── Descripción con clasificación IA ── */}
+        {/* ── Descripción ── */}
         <View style={estilos.seccion}>
           <Text style={estilos.seccionTitulo}>
             Descripción <Text style={estilos.opcional}>(opcional)</Text>
@@ -273,31 +209,10 @@ export default function AgregarGasto() {
             placeholder="Ej: tacos de canasta, Uber al trabajo…"
             placeholderTextColor={COLORS.textMuted}
             value={descripcion}
-            onChangeText={handleDescripcionChange}
+            onChangeText={setDescripcion}
             maxLength={100}
             returnKeyType="done"
           />
-
-          {/* Spinner de clasificación */}
-          {clasificando && (
-            <View style={estilos.contenedorSugerencia}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={estilos.textoClasificando}>Clasificando…</Text>
-            </View>
-          )}
-
-          {/* Chip de sugerencia de categoría */}
-          {sugerenciaIA && (
-            <TouchableOpacity
-              style={estilos.chipSugerencia}
-              onPress={aceptarSugerencia}
-              activeOpacity={0.8}
-            >
-              <Text style={estilos.chipEmoji}>{sugerenciaIA.icono}</Text>
-              <Text style={estilos.chipTexto}>{sugerenciaIA.nombre}</Text>
-              <Text style={estilos.chipConfirmar}>✓ Usar esta categoría</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* ── Categorías ── */}
@@ -420,7 +335,6 @@ export default function AgregarGasto() {
   );
 }
 
-
 // ─── ESTILOS ──────────────────────────────────────────────
 const estilos = StyleSheet.create({
   container: {
@@ -493,29 +407,6 @@ const estilos = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 18,
     fontWeight: '600',
-  },
-
-  // Sección de voz — botón + separador
-  seccionVoz: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    gap: 16,
-  },
-  separadorVoz: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-  },
-  lineaSeparador: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  textoSeparador: {
-    color: COLORS.textMuted,
-    fontSize: 12,
   },
 
   // Monto
@@ -604,44 +495,6 @@ const estilos = StyleSheet.create({
     paddingVertical: 14,
     color: COLORS.textPrimary,
     fontSize: 15,
-  },
-
-  // Sugerencia IA
-  contenedorSugerencia: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    paddingHorizontal: 4,
-  },
-  textoClasificando: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontStyle: 'italic',
-  },
-  chipSugerencia: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary + '20',
-    borderWidth: 1,
-    borderColor: COLORS.primary + '60',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 8,
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  chipEmoji: { fontSize: 16 },
-  chipTexto: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  chipConfirmar: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginLeft: 4,
   },
 
   // Categorías
