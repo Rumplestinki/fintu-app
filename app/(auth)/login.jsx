@@ -3,7 +3,7 @@ import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, KeyboardAvoidingView,
-  Platform, ActivityIndicator
+  Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useAuth } from '../../hooks/useAuth'
@@ -21,7 +21,6 @@ export default function Login() {
       Alert.alert('Campos vacíos', 'Por favor ingresa tu email y contraseña.')
       return
     }
-
     setCargando(true)
     try {
       await login(email.trim().toLowerCase(), password)
@@ -33,58 +32,64 @@ export default function Login() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.contenedor}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      {/* Logo y bienvenida */}
-      <View style={styles.encabezado}>
-        <Text style={styles.logo}>Fintú</Text>
-        <Text style={styles.tagline}>Tus finanzas contigo</Text>
-      </View>
-
-      {/* Formulario */}
-      <View style={styles.formulario}>
-        <Text style={styles.etiqueta}>Correo electrónico</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="tu@email.com"
-          placeholderTextColor={COLORS.textSecondary}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <Text style={styles.etiqueta}>Contraseña</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Tu contraseña"
-          placeholderTextColor={COLORS.textSecondary}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <TouchableOpacity
-          style={[styles.boton, cargando && styles.botonDeshabilitado]}
-          onPress={handleLogin}
-          disabled={cargando}
+    // TouchableWithoutFeedback cierra el teclado al tocar fuera de los inputs
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.contenedor}>
+        {/* En Android no usamos KeyboardAvoidingView — causa la barra blanca */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1, justifyContent: 'center' }}
         >
-          {cargando
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.botonTexto}>Entrar</Text>
-          }
-        </TouchableOpacity>
+          {/* Logo y bienvenida */}
+          <View style={styles.encabezado}>
+            <Text style={styles.logo}>Fintú</Text>
+            <Text style={styles.tagline}>Tus finanzas contigo</Text>
+          </View>
 
-        <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-          <Text style={styles.linkTexto}>
-            ¿No tienes cuenta? <Text style={styles.linkDestacado}>Regístrate</Text>
-          </Text>
-        </TouchableOpacity>
+          {/* Formulario */}
+          <View style={styles.formulario}>
+            <Text style={styles.etiqueta}>Correo electrónico</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="tu@email.com"
+              placeholderTextColor={COLORS.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.etiqueta}>Contraseña</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Tu contraseña"
+              placeholderTextColor={COLORS.textSecondary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+
+            <TouchableOpacity
+              style={[styles.boton, cargando && styles.botonDeshabilitado]}
+              onPress={handleLogin}
+              disabled={cargando}
+            >
+              {cargando
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.botonTexto}>Entrar</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
+              <Text style={styles.linkTexto}>
+                ¿No tienes cuenta? <Text style={styles.linkDestacado}>Regístrate</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </View>
-    </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   )
 }
 
@@ -98,8 +103,7 @@ function traducirError(mensaje) {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: COLORS.background,   // '#0F0F14' — oscuro
-    justifyContent: 'center',
+    backgroundColor: COLORS.background,
     paddingHorizontal: 28,
   },
   encabezado: {
@@ -109,12 +113,12 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 42,
     fontWeight: '800',
-    color: COLORS.primary,                 // '#6C63FF' — púrpura
+    color: COLORS.primary,
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 15,
-    color: COLORS.textSecondary,           // '#9898B0'
+    color: COLORS.textSecondary,
     marginTop: 6,
   },
   formulario: {
@@ -127,14 +131,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   input: {
-    backgroundColor: COLORS.surface,      // '#1A1A24' — superficie oscura
-    color: COLORS.textPrimary,             // '#FFFFFF'
+    backgroundColor: COLORS.surface,
+    color: COLORS.textPrimary,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: COLORS.border,            // '#2A2A3A'
+    borderColor: COLORS.border,
   },
   boton: {
     backgroundColor: COLORS.primary,

@@ -1,5 +1,6 @@
 // app/(tabs)/agregar.jsx
 // Pantalla para registrar un nuevo gasto manualmente
+// Incluye clasificación inteligente de categoría con Gemini / LM Studio
 
 import React, { useState, useCallback, useRef } from 'react';
 import {
@@ -20,6 +21,7 @@ import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { sugerirCategoria } from '../../services/ia'; // ← nuevo: servicio de IA
 
 
 // ─── HELPERS ──────────────────────────────────────────────
@@ -35,6 +37,7 @@ const formatearFechaLegible = (fechaISO) => {
                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
 };
+
 
 // ─── COMPONENTE TOAST ─────────────────────────────────────
 // Notificación visual dentro de la app, sin Alert nativo
@@ -66,6 +69,7 @@ function Toast({ visible, mensaje, tipo = 'exito' }) {
   );
 }
 
+
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
 export default function AgregarGasto() {
@@ -81,6 +85,11 @@ export default function AgregarGasto() {
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastTipo, setToastTipo] = useState('exito');
 
+  // ── Estado de la sugerencia de IA ──
+  const [sugerenciaIA, setSugerenciaIA] = useState(null);   // objeto categoría sugerida
+  const [clasificando, setClasificando] = useState(false);   // spinner mientras la IA piensa
+  const timeoutRef = useRef(null);                           // para el debounce
+
   // ── Reset completo del formulario cada vez que se enfoca la pantalla ──
   // Esto resuelve que queden los datos al navegar entre tabs
   useFocusEffect(
@@ -90,6 +99,9 @@ export default function AgregarGasto() {
       setDescripcion('');
       setFecha(formatearFechaISO(new Date()));
       setGuardando(false);
+      setSugerenciaIA(null);
+      setClasificando(false);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }, [])
   );
 
@@ -114,10 +126,42 @@ export default function AgregarGasto() {
     setMonto((prev) => prev + tecla);
   };
 
-  // ── Seleccionar categoría ──
+  // ── Seleccionar categoría manualmente ──
   const handleCategoria = (cat) => {
     Haptics.selectionAsync();
     setCategoriaSeleccionada(cat);
+    setSugerenciaIA(null); // limpiar sugerencia si el usuario elige manualmente
+  };
+
+  // ── Clasificar descripción con IA — con debounce de 800ms ──
+  // Espera a que el usuario deje de escribir antes de llamar a la IA
+  const handleDescripcionChange = (texto) => {
+    setDescripcion(texto);
+    setSugerenciaIA(null); // limpiar sugerencia anterior
+
+    // Cancelar el timeout anterior si el usuario sigue escribiendo
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    // Solo clasificar si hay al menos 3 caracteres y no hay categoría manual seleccionada
+    if (texto.trim().length >= 3) {
+      setClasificando(true);
+      timeoutRef.current = setTimeout(async () => {
+        const sugerencia = await sugerirCategoria(texto);
+        setSugerenciaIA(sugerencia);
+        setClasificando(false);
+      }, 800);
+    } else {
+      setClasificando(false);
+    }
+  };
+
+  // ── Aceptar la sugerencia de la IA con un tap ──
+  const aceptarSugerencia = () => {
+    if (sugerenciaIA) {
+      setCategoriaSeleccionada(sugerenciaIA);
+      setSugerenciaIA(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   };
 
   // ── Guardar gasto ──
@@ -157,6 +201,7 @@ export default function AgregarGasto() {
       setGuardando(false);
     }
   };
+
 
   // ─── RENDER ───────────────────────────────────────────────
   return (
@@ -206,6 +251,43 @@ export default function AgregarGasto() {
           ))}
         </View>
 
+        {/* ── Descripción con clasificación IA ── */}
+        <View style={estilos.seccion}>
+          <Text style={estilos.seccionTitulo}>
+            Descripción <Text style={estilos.opcional}>(opcional)</Text>
+          </Text>
+          <TextInput
+            style={estilos.inputDescripcion}
+            placeholder="Ej: tacos de canasta, Uber al trabajo…"
+            placeholderTextColor={COLORS.textMuted}
+            value={descripcion}
+            onChangeText={handleDescripcionChange}  // ← usa el handler con IA en lugar de setDescripcion
+            maxLength={100}
+            returnKeyType="done"
+          />
+
+          {/* Spinner mientras la IA clasifica */}
+          {clasificando && (
+            <View style={estilos.contenedorSugerencia}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={estilos.textoClasificando}>Clasificando…</Text>
+            </View>
+          )}
+
+          {/* Chip de sugerencia — solo aparece si hay sugerencia y no hay categoría elegida manualmente */}
+          {sugerenciaIA && (
+            <TouchableOpacity
+              style={estilos.chipSugerencia}
+              onPress={aceptarSugerencia}
+              activeOpacity={0.8}
+            >
+              <Text style={estilos.chipEmoji}>{sugerenciaIA.icono}</Text>
+              <Text style={estilos.chipTexto}>{sugerenciaIA.nombre}</Text>
+              <Text style={estilos.chipConfirmar}>✓ Usar esta categoría</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* ── Categorías ── */}
         <View style={estilos.seccion}>
           <Text style={estilos.seccionTitulo}>Categoría</Text>
@@ -235,93 +317,77 @@ export default function AgregarGasto() {
           </View>
         </View>
 
-        {/* ── Descripción ── */}
+        {/* ── Fecha ── */}
         <View style={estilos.seccion}>
-          <Text style={estilos.seccionTitulo}>
-            Descripción <Text style={estilos.opcional}>(opcional)</Text>
-          </Text>
-          <TextInput
-            style={estilos.inputDescripcion}
-            placeholder="Ej: tacos de canasta, Uber al trabajo…"
-            placeholderTextColor={COLORS.textMuted}
-            value={descripcion}
-            onChangeText={setDescripcion}
-            maxLength={100}
-            returnKeyType="done"
-          />
-        </View>
-
-       {/* ── Fecha ── */}
-        <View style={estilos.seccion}>
-        <Text style={estilos.seccionTitulo}>Fecha</Text>
-        <View style={estilos.fechaRow}>
+          <Text style={estilos.seccionTitulo}>Fecha</Text>
+          <View style={estilos.fechaRow}>
 
             {/* Botón Ayer */}
             <TouchableOpacity
-            style={[
+              style={[
                 estilos.fechaBtn,
                 fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaBtnActivo,
-            ]}
-            onPress={() => {
+              ]}
+              onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date(Date.now() - 86400000)));
-            }}
+              }}
             >
-            <Text style={estilos.fechaBtnTxt}>Ayer</Text>
+              <Text style={estilos.fechaBtnTxt}>Ayer</Text>
             </TouchableOpacity>
 
             {/* Botón Hoy */}
             <TouchableOpacity
-            style={[
+              style={[
                 estilos.fechaBtn,
                 fecha === formatearFechaISO(new Date()) && estilos.fechaBtnActivo,
-            ]}
-            onPress={() => {
+              ]}
+              onPress={() => {
                 Haptics.selectionAsync();
                 setFecha(formatearFechaISO(new Date()));
-            }}
+              }}
             >
-            <Text style={estilos.fechaBtnTxt}>Hoy</Text>
+              <Text style={estilos.fechaBtnTxt}>Hoy</Text>
             </TouchableOpacity>
 
             {/* Botón para abrir el picker de fecha */}
             <TouchableOpacity
-            style={[
+              style={[
                 estilos.fechaDisplay,
                 // Resaltar si no es hoy ni ayer (fecha personalizada)
                 fecha !== formatearFechaISO(new Date()) &&
                 fecha !== formatearFechaISO(new Date(Date.now() - 86400000)) &&
                 estilos.fechaBtnActivo,
-            ]}
-            onPress={() => {
+              ]}
+              onPress={() => {
                 Haptics.selectionAsync();
                 setMostrarPicker(true);
-            }}
+              }}
             >
-            <Text style={estilos.fechaDisplayTxt}>
+              <Text style={estilos.fechaDisplayTxt}>
                 📅 {formatearFechaLegible(fecha)}
-            </Text>
+              </Text>
             </TouchableOpacity>
 
-        </View>
+          </View>
 
-        {/* Selector nativo de fecha — solo visible cuando se abre */}
-        {mostrarPicker && (
+          {/* Selector nativo de fecha — solo visible cuando se abre */}
+          {mostrarPicker && (
             <DateTimePicker
-            value={new Date(fecha + 'T12:00:00')}
-            mode="date"
-            display="default"
-            maximumDate={new Date()}
-            onChange={(evento, fechaSeleccionada) => {
+              value={new Date(fecha + 'T12:00:00')}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={(evento, fechaSeleccionada) => {
                 setMostrarPicker(false);
                 if (evento.type === 'dismissed') return;
                 if (fechaSeleccionada) {
-                setFecha(formatearFechaISO(fechaSeleccionada));
-                Haptics.selectionAsync();
+                  setFecha(formatearFechaISO(fechaSeleccionada));
+                  Haptics.selectionAsync();
                 }
-            }}
+              }}
             />
-        )}
+          )}
         </View>
 
         {/* ── Botón Guardar ── */}
@@ -348,6 +414,7 @@ export default function AgregarGasto() {
     </KeyboardAvoidingView>
   );
 }
+
 
 // ─── ESTILOS ──────────────────────────────────────────────
 const estilos = StyleSheet.create({
@@ -538,6 +605,46 @@ const estilos = StyleSheet.create({
     paddingVertical: 14,
     color: COLORS.textPrimary,
     fontSize: 15,
+  },
+
+  // ── Sugerencia de IA ──────────────────────
+  contenedorSugerencia: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  textoClasificando: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+  },
+  chipSugerencia: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary + '20',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '60',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  chipEmoji: {
+    fontSize: 16,
+  },
+  chipTexto: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  chipConfirmar: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 4,
   },
 
   // Fecha
