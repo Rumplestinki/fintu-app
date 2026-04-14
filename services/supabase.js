@@ -2,32 +2,33 @@
 // services/supabase.js
 // Cliente de Supabase para toda la app
 // ============================================
-
 import 'react-native-url-polyfill/auto';
-// Cliente de Supabase — punto central de conexión a la base de datos
-import { createClient } from '@supabase/supabase-js'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Leer credenciales desde variables de entorno
+// process.env.EXPO_PUBLIC_* funciona en Expo tanto en dev como en builds
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Leer credenciales desde las variables de entorno
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-
-// Validar que las variables estén definidas
+// Advertir si faltan variables (sin crashear la app)
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    '❌ Faltan variables de entorno de Supabase. ' +
-    'Revisa tu archivo .env'
+  console.warn(
+    '⚠️ Faltan variables de entorno de Supabase. ' +
+    'Revisa tu archivo .env o la configuración de EAS.'
   );
 }
 
 // Crear y exportar el cliente de Supabase
-// AsyncStorage mantiene la sesión activa entre cierres de la app
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false, // necesario en React Native
-  },
-})
+export const supabase = createClient(
+  supabaseUrl ?? 'https://placeholder.supabase.co',
+  supabaseAnonKey ?? 'placeholder',
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+);
