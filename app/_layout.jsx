@@ -1,14 +1,11 @@
 // Layout raíz de la app — decide si mostrar onboarding, login o la app principal
-// Al cargar verifica AsyncStorage para saber si el onboarding ya fue visto
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
 import { supabase } from "../services/supabase";
 import { View, ActivityIndicator } from "react-native";
-
 
 export default function RootLayout() {
   const router = useRouter();
@@ -17,15 +14,21 @@ export default function RootLayout() {
   const [sesion, setSesion] = useState(null);
   const [onboardingVisto, setOnboardingVisto] = useState(false);
 
-  // Al montar: verifica sesión de Supabase y si el onboarding ya fue visto
+  // Función para releer AsyncStorage — se llama al montar y cuando cambian segments
+  const verificarEstado = useCallback(async () => {
+    try {
+      const visto = await AsyncStorage.getItem("onboarding_visto");
+      setOnboardingVisto(visto === "true");
+    } catch (error) {
+      console.error("Error leyendo onboarding:", error);
+    }
+  }, []);
+
+  // Inicialización: sesión + onboarding
   useEffect(() => {
     const inicializar = async () => {
       try {
-        // Verificar si el onboarding ya fue visto
-        const visto = await AsyncStorage.getItem("onboarding_visto");
-        setOnboardingVisto(visto === "true");
-
-        // Verificar sesión activa de Supabase
+        await verificarEstado();
         const { data: { session } } = await supabase.auth.getSession();
         setSesion(session);
       } catch (error) {
@@ -47,7 +50,15 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Redirigir según el estado cuando termina de cargar
+  // Releer AsyncStorage cada vez que cambia la ruta activa
+  // Esto detecta cuando el onboarding escribe "onboarding_visto" y navega
+  useEffect(() => {
+    if (!cargando) {
+      verificarEstado();
+    }
+  }, [segments]);
+
+  // Redirigir según el estado
   useEffect(() => {
     if (cargando) return;
 
@@ -55,18 +66,14 @@ export default function RootLayout() {
     const enAuth = segments[0] === "(auth)";
 
     if (!onboardingVisto) {
-      // Primera vez → mostrar onboarding
       if (!enOnboarding) router.replace("/onboarding");
     } else if (!sesion) {
-      // Onboarding ya visto pero sin sesión → login
       if (!enAuth) router.replace("/(auth)/login");
     } else {
-      // Sesión activa → ir a la app
       if (enAuth || enOnboarding) router.replace("/(tabs)");
     }
   }, [cargando, sesion, onboardingVisto, segments]);
 
-  // Pantalla de carga mientras se inicializa
   if (cargando) {
     return (
       <View style={{ flex: 1, backgroundColor: "#1A1035", alignItems: "center", justifyContent: "center" }}>

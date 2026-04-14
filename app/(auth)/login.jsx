@@ -17,7 +17,6 @@ export default function Login() {
   const router = useRouter()
 
   async function handleLogin() {
-    // Validación básica antes de llamar a Supabase
     if (!email || !password) {
       Alert.alert('Campos vacíos', 'Por favor ingresa tu email y contraseña.')
       return
@@ -26,7 +25,6 @@ export default function Login() {
     setCargando(true)
     try {
       await login(email.trim().toLowerCase(), password)
-      // El _layout.jsx detecta el cambio de sesión y redirige automáticamente
     } catch (error) {
       Alert.alert('Error al iniciar sesión', traducirError(error.message))
     } finally {
@@ -51,7 +49,7 @@ export default function Login() {
         <TextInput
           style={styles.input}
           placeholder="tu@email.com"
-          placeholderTextColor={COLORS.textoSecundario}
+          placeholderTextColor={COLORS.textSecondary}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -63,7 +61,7 @@ export default function Login() {
         <TextInput
           style={styles.input}
           placeholder="Tu contraseña"
-          placeholderTextColor={COLORS.textoSecundario}
+          placeholderTextColor={COLORS.textSecondary}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -80,7 +78,6 @@ export default function Login() {
           }
         </TouchableOpacity>
 
-        {/* Ir a registro */}
         <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
           <Text style={styles.linkTexto}>
             ¿No tienes cuenta? <Text style={styles.linkDestacado}>Regístrate</Text>
@@ -91,7 +88,6 @@ export default function Login() {
   )
 }
 
-// Traduce mensajes de error de Supabase al español
 function traducirError(mensaje) {
   if (mensaje.includes('Invalid login credentials')) return 'Email o contraseña incorrectos.'
   if (mensaje.includes('Email not confirmed')) return 'Confirma tu email antes de entrar.'
@@ -102,7 +98,7 @@ function traducirError(mensaje) {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: COLORS.fondo,
+    backgroundColor: COLORS.background,   // '#0F0F14' — oscuro
     justifyContent: 'center',
     paddingHorizontal: 28,
   },
@@ -113,35 +109,35 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 42,
     fontWeight: '800',
-    color: COLORS.primario,
+    color: COLORS.primary,                 // '#6C63FF' — púrpura
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 15,
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,           // '#9898B0'
     marginTop: 6,
   },
   formulario: {
     gap: 8,
   },
   etiqueta: {
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,
     fontSize: 13,
     marginBottom: 4,
     marginTop: 8,
   },
   input: {
-    backgroundColor: COLORS.fondoInput,
-    color: COLORS.texto,
+    backgroundColor: COLORS.surface,      // '#1A1A24' — superficie oscura
+    color: COLORS.textPrimary,             // '#FFFFFF'
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: COLORS.borde,
+    borderColor: COLORS.border,            // '#2A2A3A'
   },
   boton: {
-    backgroundColor: COLORS.primario,
+    backgroundColor: COLORS.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -151,18 +147,18 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   botonTexto: {
-    color: '#fff',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '700',
   },
   linkTexto: {
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: 20,
     fontSize: 14,
   },
   linkDestacado: {
-    color: COLORS.primario,
+    color: COLORS.primary,
     fontWeight: '600',
   },
 })
