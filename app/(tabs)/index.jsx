@@ -22,7 +22,7 @@ import { getCategoriaByDbId } from '../../constants/categorias';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
 import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
-import BotonVoz from '../../components/BotonVoz'; // ← nuevo
+import BotonVoz from '../../components/BotonVoz';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -53,7 +53,6 @@ export default function Dashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Estado de datos
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [gastadoMes, setGastadoMes] = useState(0);
   const [ultimosGastos, setUltimosGastos] = useState([]);
@@ -61,8 +60,6 @@ export default function Dashboard() {
   const [refrescando, setRefrescando] = useState(false);
   const [presupuestoMes, setPresupuestoMes] = useState(0);
   const [ingresosMes, setIngresosMes] = useState(0);
-
-  // Estado del modal de voz
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
 
@@ -112,12 +109,11 @@ export default function Dashboard() {
     cargarDatos();
   };
 
-  // ── Guardar gasto detectado por voz directamente desde el dashboard ──
+  // ── Guardar gasto detectado por voz ──
   const handleResultadoVoz = async (datos) => {
-    // Si el monto es 0 o no se detectó bien, ir a la pantalla de agregar con los datos
+    // Si no se detectó monto, ir a agregar manual
     if (!datos.monto || datos.monto === '0') {
       setModalVozVisible(false);
-      // Navegar a agregar — el usuario completa el monto manualmente
       router.push('/(tabs)/agregar');
       return;
     }
@@ -126,36 +122,37 @@ export default function Dashboard() {
       setGuardandoVoz(true);
       await registrarGasto({
         monto: parseFloat(datos.monto),
-        categoria_id: datos.categoria?.dbId || 9, // 9 = otros si no detectó categoría
+        categoria_id: datos.categoria?.dbId || 9,
         descripcion: datos.descripcion || '',
         fecha: formatearFechaISO(new Date()),
         origen: 'voz',
       });
 
       setModalVozVisible(false);
+      setGuardandoVoz(false);
 
-      // Pequeña pausa antes de recargar para que el usuario vea que se cerró el modal
       setTimeout(() => {
         cargarDatos();
         Alert.alert(
           '¡Gasto registrado! 🎙️',
           `$${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${datos.descripcion ? ` — ${datos.descripcion}` : ''}`,
-          [{ text: 'Ver historial', onPress: () => router.push('/(tabs)/gastos') }, { text: 'OK' }]
+          [
+            { text: 'Ver historial', onPress: () => router.push('/(tabs)/gastos') },
+            { text: 'OK' },
+          ]
         );
       }, 300);
 
     } catch (error) {
       console.error('Error guardando gasto por voz:', error);
-      Alert.alert('Error', 'No se pudo guardar el gasto. Intenta de nuevo.');
-    } finally {
       setGuardandoVoz(false);
+      Alert.alert('Error', 'No se pudo guardar el gasto. Intenta de nuevo.');
     }
   };
 
-  // Cálculos del presupuesto
+  // Cálculos
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
   const disponible = ingresosMes - gastadoMes;
-
   const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
   const mesCapitalizado = mesActual.charAt(0).toUpperCase() + mesActual.slice(1);
 
@@ -164,7 +161,7 @@ export default function Dashboard() {
     <View style={estilos.contenedor}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
-      {/* ── HEADER FIJO ── */}
+      {/* ── HEADER ── */}
       <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
         <View style={estilos.headerTop}>
           <View>
@@ -189,7 +186,6 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* Barra de progreso del presupuesto */}
         <View style={estilos.barraBg}>
           <View
             style={[
@@ -207,7 +203,7 @@ export default function Dashboard() {
         <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
       </View>
 
-      {/* ── CONTENIDO CON SCROLL ── */}
+      {/* ── SCROLL ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.scroll}
@@ -215,7 +211,6 @@ export default function Dashboard() {
           <RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        {/* Tarjetas: Ingresos y Disponible */}
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
@@ -236,7 +231,6 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* Últimos movimientos */}
         <View style={estilos.seccion}>
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
@@ -267,9 +261,7 @@ export default function Dashboard() {
       </ScrollView>
 
       {/* ── BOTONES FLOTANTES ── */}
-      {/* Agregar manual (izquierda, más ancho) + voz (derecha) */}
       <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 16 }]}>
-        {/* Botón de agregar manual */}
         <TouchableOpacity
           style={estilos.botonAgregar}
           onPress={() => router.push('/(tabs)/agregar')}
@@ -278,7 +270,6 @@ export default function Dashboard() {
           <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
         </TouchableOpacity>
 
-        {/* Botón de voz — a la derecha, fácil con el pulgar */}
         <TouchableOpacity
           style={estilos.btnVozFlotante}
           onPress={() => setModalVozVisible(true)}
@@ -297,15 +288,12 @@ export default function Dashboard() {
       >
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalContenido}>
-            {/* Handle visual */}
             <View style={estilos.modalHandle} />
-
             <Text style={estilos.modalTitulo}>Registrar por voz</Text>
             <Text style={estilos.modalSubtitulo}>
               Di algo como: "gasté 150 pesos en tacos"
             </Text>
 
-            {/* Botón de voz grande centrado */}
             <View style={estilos.modalBotonVoz}>
               {guardandoVoz ? (
                 <View style={estilos.guardandoContenedor}>
@@ -317,7 +305,6 @@ export default function Dashboard() {
               )}
             </View>
 
-            {/* Ejemplos de frases */}
             <View style={estilos.ejemplos}>
               <Text style={estilos.ejemplosTitulo}>Ejemplos:</Text>
               <Text style={estilos.ejemploTexto}>"Gasté 80 pesos en el Oxxo"</Text>
@@ -325,7 +312,6 @@ export default function Dashboard() {
               <Text style={estilos.ejemploTexto}>"Pagué 500 de renta"</Text>
             </View>
 
-            {/* Botón cancelar */}
             {!guardandoVoz && (
               <TouchableOpacity
                 style={estilos.btnCancelarModal}
@@ -341,7 +327,7 @@ export default function Dashboard() {
   );
 }
 
-// ─── Componente: una fila de gasto ────────────────────────
+// ─── Componente fila de gasto ──────────────────────────────
 function GastoItem({ gasto, categoria }) {
   return (
     <View style={estilos.gastoItem}>
@@ -364,7 +350,6 @@ const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
 
-  // Header púrpura
   header: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 20,
@@ -395,7 +380,6 @@ const estilos = StyleSheet.create({
   barraRelleno: { height: '100%', borderRadius: 3 },
   porcentajeTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'right' },
 
-  // Secciones
   seccion: { paddingHorizontal: 16, marginTop: 16 },
   seccionHeader: {
     flexDirection: 'row', justifyContent: 'space-between',
@@ -404,13 +388,11 @@ const estilos = StyleSheet.create({
   seccionTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
   verTodos: { fontSize: 12, color: COLORS.primary },
 
-  // Tarjetas mini
   tarjetasGrid: { flexDirection: 'row', gap: 10 },
   tarjetaMini: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 14 },
   tarjetaMiniLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
   tarjetaMiniMonto: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
 
-  // Filas de gastos
   gastoItem: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surface, borderRadius: 12,
@@ -423,13 +405,11 @@ const estilos = StyleSheet.create({
   gastoFecha: { fontSize: 11, color: COLORS.textSecondary },
   gastoMonto: { fontSize: 13, fontWeight: '600', color: COLORS.error },
 
-  // Estado vacío
   estadoVacio: { alignItems: 'center', paddingVertical: 40 },
   estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
   estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
   estadoVacioSub: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', paddingHorizontal: 20 },
 
-  // ── Botones flotantes ──
   botonesFlotantes: {
     position: 'absolute',
     left: 16,
@@ -438,24 +418,6 @@ const estilos = StyleSheet.create({
     gap: 12,
     alignItems: 'center',
   },
-  // Botón circular de voz
-  btnVozFlotante: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  btnVozEmoji: { fontSize: 24 },
-  // Botón principal de agregar
   botonAgregar: {
     flex: 1,
     backgroundColor: COLORS.primary,
@@ -469,9 +431,19 @@ const estilos = StyleSheet.create({
     elevation: 8,
   },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  btnVozFlotante: {
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  btnVozEmoji: { fontSize: 24 },
 
-  // ── Modal de voz ──
-  // justifyContent: 'flex-end' lo pega abajo — cómodo con el pulgar
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -482,28 +454,17 @@ const estilos = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
-    paddingBottom: 48, // espacio extra para el gesto de home en Android
+    paddingBottom: 48,
     alignItems: 'center',
   },
   modalHandle: {
     width: 40, height: 4,
     backgroundColor: COLORS.border,
-    borderRadius: 2,
-    marginBottom: 16,
+    borderRadius: 2, marginBottom: 16,
   },
-  modalTitulo: {
-    fontSize: 20, fontWeight: '700',
-    color: COLORS.textPrimary, marginBottom: 6,
-  },
-  modalSubtitulo: {
-    fontSize: 13, color: COLORS.textSecondary,
-    textAlign: 'center', marginBottom: 28,
-  },
-  // Botón grande centrado — fácil de alcanzar con el pulgar
-  modalBotonVoz: {
-    marginBottom: 28,
-    alignItems: 'center',
-  },
+  modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
+  modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },
+  modalBotonVoz: { marginBottom: 28, alignItems: 'center' },
   guardandoContenedor: { alignItems: 'center', gap: 12 },
   guardandoTexto: { fontSize: 14, color: COLORS.textSecondary },
   ejemplos: {
@@ -516,9 +477,6 @@ const estilos = StyleSheet.create({
   },
   ejemplosTitulo: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 4 },
   ejemploTexto: { fontSize: 13, color: COLORS.textPrimary, fontStyle: 'italic' },
-  btnCancelarModal: {
-    paddingVertical: 10,
-    paddingHorizontal: 32,
-  },
+  btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
   btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });
