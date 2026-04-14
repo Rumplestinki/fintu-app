@@ -1,5 +1,5 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — conectado a datos reales de Supabase
+// Dashboard principal de Fintú — con botón de voz flotante
 
 import { useState, useCallback } from 'react';
 import {
@@ -11,6 +11,8 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -18,12 +20,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
-import { obtenerUltimosGastos, obtenerGastosMes } from '../../services/gastos';
+import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
+import BotonVoz from '../../components/BotonVoz'; // ← nuevo
 
 // ─── HELPERS ──────────────────────────────────────────────
 
-// Formatea número a pesos mexicanos
 const formatMXN = (monto) =>
   new Intl.NumberFormat('es-MX', {
     style: 'currency',
@@ -31,22 +33,19 @@ const formatMXN = (monto) =>
     minimumFractionDigits: 0,
   }).format(monto || 0);
 
-// Convierte fecha ISO a texto legible ("Hoy", "Ayer", "13 abr")
 const formatearFechaGasto = (fechaISO) => {
   if (!fechaISO) return '';
   const hoy = new Date();
-  const fecha = new Date(fechaISO + 'T12:00:00'); // Evitar problemas de timezone
-
+  const fecha = new Date(fechaISO + 'T12:00:00');
   const hoyStr = hoy.toISOString().split('T')[0];
   const ayerStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
   if (fechaISO === hoyStr) return 'Hoy';
   if (fechaISO === ayerStr) return 'Ayer';
-
-  const meses = ['ene','feb','mar','abr','may','jun',
-                 'jul','ago','sep','oct','nov','dic'];
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return `${fecha.getDate()} ${meses[fecha.getMonth()]}`;
 };
+
+const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
@@ -54,52 +53,42 @@ export default function Dashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Estado ──
+  // Estado de datos
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [gastadoMes, setGastadoMes] = useState(0);
   const [ultimosGastos, setUltimosGastos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
+  const [presupuestoMes, setPresupuestoMes] = useState(0);
+  const [ingresosMes, setIngresosMes] = useState(0);
 
-    // presupuesto viene de Supabase, ingresos siguen fijos por ahora:
-    const [presupuestoMes, setPresupuestoMes] = useState(0);
-    const [ingresosMes, setIngresosMes] = useState(0);
+  // Estado del modal de voz
+  const [modalVozVisible, setModalVozVisible] = useState(false);
+  const [guardandoVoz, setGuardandoVoz] = useState(false);
 
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
     try {
-      // Obtener nombre del usuario autenticado
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Buscar nombre en la tabla users, si no usar el email
         const { data: perfil } = await supabase
           .from('users')
           .select('nombre, ingreso_mensual')
           .eq('id', user.id)
           .single();
-
         setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
         setIngresosMes(perfil?.ingreso_mensual || 0);
       }
 
-      // Obtener gastos del mes actual
       const ahora = new Date();
-      const gastosDelMes = await obtenerGastosMes(
-        ahora.getMonth() + 1, // getMonth() retorna 0-11, Supabase espera 1-12
-        ahora.getFullYear()
-      );
-
-      // Sumar todos los montos del mes
+      const gastosDelMes = await obtenerGastosMes(ahora.getMonth() + 1, ahora.getFullYear());
       const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
 
-      // Obtener los 5 gastos más recientes para mostrar en el dashboard
       const recientes = await obtenerUltimosGastos(5);
       setUltimosGastos(recientes);
 
-      // Cargar presupuesto total del mes desde Supabase
-      const ahora2 = new Date();
-      const presupuestosData = await obtenerPresupuestosMes(ahora2.getMonth() + 1, ahora2.getFullYear());
+      const presupuestosData = await obtenerPresupuestosMes(ahora.getMonth() + 1, ahora.getFullYear());
       const totalPresupuestado = presupuestosData.reduce((sum, p) => sum + parseFloat(p.limite), 0);
       setPresupuestoMes(totalPresupuestado);
 
@@ -111,8 +100,6 @@ export default function Dashboard() {
     }
   };
 
-  // useFocusEffect: se ejecuta cada vez que el usuario regresa a esta pantalla
-  // Así cuando guarda un gasto y vuelve, los datos se actualizan automáticamente
   useFocusEffect(
     useCallback(() => {
       setCargando(true);
@@ -120,23 +107,56 @@ export default function Dashboard() {
     }, [])
   );
 
-  // Jalar hacia abajo para refrescar
   const onRefresh = () => {
     setRefrescando(true);
     cargarDatos();
   };
 
+  // ── Guardar gasto detectado por voz directamente desde el dashboard ──
+  const handleResultadoVoz = async (datos) => {
+    // Si el monto es 0 o no se detectó bien, ir a la pantalla de agregar con los datos
+    if (!datos.monto || datos.monto === '0') {
+      setModalVozVisible(false);
+      // Navegar a agregar — el usuario completa el monto manualmente
+      router.push('/(tabs)/agregar');
+      return;
+    }
+
+    try {
+      setGuardandoVoz(true);
+      await registrarGasto({
+        monto: parseFloat(datos.monto),
+        categoria_id: datos.categoria?.dbId || 9, // 9 = otros si no detectó categoría
+        descripcion: datos.descripcion || '',
+        fecha: formatearFechaISO(new Date()),
+        origen: 'voz',
+      });
+
+      setModalVozVisible(false);
+
+      // Pequeña pausa antes de recargar para que el usuario vea que se cerró el modal
+      setTimeout(() => {
+        cargarDatos();
+        Alert.alert(
+          '¡Gasto registrado! 🎙️',
+          `$${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${datos.descripcion ? ` — ${datos.descripcion}` : ''}`,
+          [{ text: 'Ver historial', onPress: () => router.push('/(tabs)/gastos') }, { text: 'OK' }]
+        );
+      }, 300);
+
+    } catch (error) {
+      console.error('Error guardando gasto por voz:', error);
+      Alert.alert('Error', 'No se pudo guardar el gasto. Intenta de nuevo.');
+    } finally {
+      setGuardandoVoz(false);
+    }
+  };
+
   // Cálculos del presupuesto
-  const porcentajeUsado = presupuestoMes > 0
-    ? Math.round((gastadoMes / presupuestoMes) * 100)
-    : 0;
+  const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
   const disponible = ingresosMes - gastadoMes;
 
-  // Mes actual en español con primera letra mayúscula
-  const mesActual = new Date().toLocaleDateString('es-MX', {
-    month: 'long',
-    year: 'numeric',
-  });
+  const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
   const mesCapitalizado = mesActual.charAt(0).toUpperCase() + mesActual.slice(1);
 
   // ─── RENDER ───────────────────────────────────────────────
@@ -146,36 +166,26 @@ export default function Dashboard() {
 
       {/* ── HEADER FIJO ── */}
       <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
-
         <View style={estilos.headerTop}>
           <View>
-            <Text style={estilos.saludo}>
-              Hola, {nombreUsuario} 👋
-            </Text>
+            <Text style={estilos.saludo}>Hola, {nombreUsuario} 👋</Text>
             <Text style={estilos.fechaMes}>{mesCapitalizado}</Text>
           </View>
-
           <TouchableOpacity
             style={estilos.avatar}
             onPress={() => router.push('/(tabs)/perfil')}
           >
-            <Text style={estilos.avatarTexto}>
-              {nombreUsuario.charAt(0).toUpperCase()}
-            </Text>
+            <Text style={estilos.avatarTexto}>{nombreUsuario.charAt(0).toUpperCase()}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Balance del mes */}
         <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
-
         {cargando ? (
           <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} />
         ) : (
           <>
             <Text style={estilos.montoBalance}>{formatMXN(gastadoMes)}</Text>
-            <Text style={estilos.subBalance}>
-              de {formatMXN(presupuestoMes)} presupuestados
-            </Text>
+            <Text style={estilos.subBalance}>de {formatMXN(presupuestoMes)} presupuestados</Text>
           </>
         )}
 
@@ -194,9 +204,7 @@ export default function Dashboard() {
             ]}
           />
         </View>
-        <Text style={estilos.porcentajeTexto}>
-          {porcentajeUsado}% del presupuesto
-        </Text>
+        <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
       </View>
 
       {/* ── CONTENIDO CON SCROLL ── */}
@@ -204,11 +212,7 @@ export default function Dashboard() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.scroll}
         refreshControl={
-          <RefreshControl
-            refreshing={refrescando}
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-          />
+          <RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
         {/* Tarjetas: Ingresos y Disponible */}
@@ -244,7 +248,6 @@ export default function Dashboard() {
           {cargando ? (
             <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
           ) : ultimosGastos.length === 0 ? (
-            // Estado vacío — cuando no hay gastos aún
             <View style={estilos.estadoVacio}>
               <Text style={estilos.estadoVacioEmoji}>💸</Text>
               <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
@@ -254,24 +257,19 @@ export default function Dashboard() {
             </View>
           ) : (
             ultimosGastos.map((gasto) => {
-              // Buscar la categoría por su dbId numérico
               const categoria = getCategoriaByDbId(gasto.categoria_id);
-              return (
-                <GastoItem
-                  key={gasto.id}
-                  gasto={gasto}
-                  categoria={categoria}
-                />
-              );
+              return <GastoItem key={gasto.id} gasto={gasto} categoria={categoria} />;
             })
           )}
         </View>
 
-        <View style={{ height: 90 }} />
+        <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* ── BOTÓN FLOTANTE ── */}
-      <View style={[estilos.botonContenedor, { bottom: insets.bottom + 16 }]}>
+      {/* ── BOTONES FLOTANTES ── */}
+      {/* Agregar manual (izquierda, más ancho) + voz (derecha) */}
+      <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 16 }]}>
+        {/* Botón de agregar manual */}
         <TouchableOpacity
           style={estilos.botonAgregar}
           onPress={() => router.push('/(tabs)/agregar')}
@@ -279,48 +277,92 @@ export default function Dashboard() {
         >
           <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
         </TouchableOpacity>
+
+        {/* Botón de voz — a la derecha, fácil con el pulgar */}
+        <TouchableOpacity
+          style={estilos.btnVozFlotante}
+          onPress={() => setModalVozVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={estilos.btnVozEmoji}>🎙️</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* ── MODAL DE VOZ ── */}
+      <Modal
+        visible={modalVozVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}
+      >
+        <View style={estilos.modalOverlay}>
+          <View style={estilos.modalContenido}>
+            {/* Handle visual */}
+            <View style={estilos.modalHandle} />
+
+            <Text style={estilos.modalTitulo}>Registrar por voz</Text>
+            <Text style={estilos.modalSubtitulo}>
+              Di algo como: "gasté 150 pesos en tacos"
+            </Text>
+
+            {/* Botón de voz grande centrado */}
+            <View style={estilos.modalBotonVoz}>
+              {guardandoVoz ? (
+                <View style={estilos.guardandoContenedor}>
+                  <ActivityIndicator size="large" color={COLORS.primary} />
+                  <Text style={estilos.guardandoTexto}>Guardando gasto…</Text>
+                </View>
+              ) : (
+                <BotonVoz onResultado={handleResultadoVoz} tamaño="grande" />
+              )}
+            </View>
+
+            {/* Ejemplos de frases */}
+            <View style={estilos.ejemplos}>
+              <Text style={estilos.ejemplosTitulo}>Ejemplos:</Text>
+              <Text style={estilos.ejemploTexto}>"Gasté 80 pesos en el Oxxo"</Text>
+              <Text style={estilos.ejemploTexto}>"150 de uber"</Text>
+              <Text style={estilos.ejemploTexto}>"Pagué 500 de renta"</Text>
+            </View>
+
+            {/* Botón cancelar */}
+            {!guardandoVoz && (
+              <TouchableOpacity
+                style={estilos.btnCancelarModal}
+                onPress={() => setModalVozVisible(false)}
+              >
+                <Text style={estilos.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 // ─── Componente: una fila de gasto ────────────────────────
-
 function GastoItem({ gasto, categoria }) {
   return (
     <View style={estilos.gastoItem}>
-      {/* Ícono con color de fondo de la categoría */}
       <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}>
         <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
       </View>
-
-      {/* Descripción y fecha */}
       <View style={estilos.gastoInfo}>
         <Text style={estilos.gastoDescripcion} numberOfLines={1}>
           {gasto.descripcion || categoria.nombre}
         </Text>
-        <Text style={estilos.gastoFecha}>
-          {formatearFechaGasto(gasto.fecha)}
-        </Text>
+        <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
       </View>
-
-      {/* Monto */}
-      <Text style={estilos.gastoMonto}>
-        -{formatMXN(gasto.monto)}
-      </Text>
+      <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
     </View>
   );
 }
 
 // ─── ESTILOS ──────────────────────────────────────────────
 const estilos = StyleSheet.create({
-  contenedor: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scroll: {
-    flexGrow: 1,
-  },
+  contenedor: { flex: 1, backgroundColor: COLORS.background },
+  scroll: { flexGrow: 1 },
 
   // Header púrpura
   header: {
@@ -334,174 +376,88 @@ const estilos = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 20,
   },
-  saludo: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 2,
-  },
-  fechaMes: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
+  fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarTexto: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  etiquetaBalance: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 4,
-  },
-  montoBalance: {
-    fontSize: 34,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: -0.5,
-  },
-  subBalance: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 4,
-  },
+  avatarTexto: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  etiquetaBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
+  montoBalance: { fontSize: 34, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
+  subBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
   barraBg: {
-    marginTop: 14,
-    height: 6,
+    marginTop: 14, height: 6,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3,
-    overflow: 'hidden',
+    borderRadius: 3, overflow: 'hidden',
   },
-  barraRelleno: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  porcentajeTexto: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 6,
-    textAlign: 'right',
-  },
+  barraRelleno: { height: '100%', borderRadius: 3 },
+  porcentajeTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'right' },
 
   // Secciones
-  seccion: {
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
+  seccion: { paddingHorizontal: 16, marginTop: 16 },
   seccionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 12,
   },
-  seccionTitulo: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  verTodos: {
-    fontSize: 12,
-    color: COLORS.primary,
-  },
+  seccionTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
+  verTodos: { fontSize: 12, color: COLORS.primary },
 
   // Tarjetas mini
-  tarjetasGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  tarjetaMini: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 14,
-  },
-  tarjetaMiniLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  tarjetaMiniMonto: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
+  tarjetasGrid: { flexDirection: 'row', gap: 10 },
+  tarjetaMini: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 14 },
+  tarjetaMiniLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
+  tarjetaMiniMonto: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
 
   // Filas de gastos
   gastoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surface, borderRadius: 12,
+    padding: 12, marginBottom: 8, gap: 12,
   },
-  gastoIcono: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gastoEmoji: {
-    fontSize: 18,
-  },
-  gastoInfo: {
-    flex: 1,
-  },
-  gastoDescripcion: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.textPrimary,
-    marginBottom: 2,
-  },
-  gastoFecha: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-  },
-  gastoMonto: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.error,
-  },
+  gastoIcono: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  gastoEmoji: { fontSize: 18 },
+  gastoInfo: { flex: 1 },
+  gastoDescripcion: { fontSize: 13, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 2 },
+  gastoFecha: { fontSize: 11, color: COLORS.textSecondary },
+  gastoMonto: { fontSize: 13, fontWeight: '600', color: COLORS.error },
 
   // Estado vacío
-  estadoVacio: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  estadoVacioEmoji: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-  estadoVacioTitulo: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-  },
-  estadoVacioSub: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
+  estadoVacio: { alignItems: 'center', paddingVertical: 40 },
+  estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
+  estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
+  estadoVacioSub: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', paddingHorizontal: 20 },
 
-  // Botón flotante
-  botonContenedor: {
+  // ── Botones flotantes ──
+  botonesFlotantes: {
     position: 'absolute',
     left: 16,
     right: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
   },
+  // Botón circular de voz
+  btnVozFlotante: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  btnVozEmoji: { fontSize: 24 },
+  // Botón principal de agregar
   botonAgregar: {
+    flex: 1,
     backgroundColor: COLORS.primary,
     borderRadius: 16,
     paddingVertical: 16,
@@ -512,9 +468,57 @@ const estilos = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  botonTexto: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
+  botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  // ── Modal de voz ──
+  // justifyContent: 'flex-end' lo pega abajo — cómodo con el pulgar
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
   },
+  modalContenido: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 48, // espacio extra para el gesto de home en Android
+    alignItems: 'center',
+  },
+  modalHandle: {
+    width: 40, height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    marginBottom: 16,
+  },
+  modalTitulo: {
+    fontSize: 20, fontWeight: '700',
+    color: COLORS.textPrimary, marginBottom: 6,
+  },
+  modalSubtitulo: {
+    fontSize: 13, color: COLORS.textSecondary,
+    textAlign: 'center', marginBottom: 28,
+  },
+  // Botón grande centrado — fácil de alcanzar con el pulgar
+  modalBotonVoz: {
+    marginBottom: 28,
+    alignItems: 'center',
+  },
+  guardandoContenedor: { alignItems: 'center', gap: 12 },
+  guardandoTexto: { fontSize: 14, color: COLORS.textSecondary },
+  ejemplos: {
+    width: '100%',
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    gap: 4,
+  },
+  ejemplosTitulo: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 4 },
+  ejemploTexto: { fontSize: 13, color: COLORS.textPrimary, fontStyle: 'italic' },
+  btnCancelarModal: {
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+  },
+  btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });

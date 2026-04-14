@@ -1,6 +1,5 @@
 // app/(tabs)/agregar.jsx
-// Pantalla para registrar un nuevo gasto manualmente
-// Incluye clasificación inteligente de categoría con Gemini / LM Studio
+// Pantalla para registrar un nuevo gasto — manual o por voz
 
 import React, { useState, useCallback, useRef } from 'react';
 import {
@@ -21,7 +20,8 @@ import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { sugerirCategoria } from '../../services/ia'; // ← nuevo: servicio de IA
+import { sugerirCategoria } from '../../services/ia';
+import BotonVoz from '../../components/BotonVoz'; // ← nuevo
 
 
 // ─── HELPERS ──────────────────────────────────────────────
@@ -40,7 +40,6 @@ const formatearFechaLegible = (fechaISO) => {
 
 
 // ─── COMPONENTE TOAST ─────────────────────────────────────
-// Notificación visual dentro de la app, sin Alert nativo
 
 function Toast({ visible, mensaje, tipo = 'exito' }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -85,13 +84,12 @@ export default function AgregarGasto() {
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastTipo, setToastTipo] = useState('exito');
 
-  // ── Estado de la sugerencia de IA ──
-  const [sugerenciaIA, setSugerenciaIA] = useState(null);   // objeto categoría sugerida
-  const [clasificando, setClasificando] = useState(false);   // spinner mientras la IA piensa
-  const timeoutRef = useRef(null);                           // para el debounce
+  // Estado de la sugerencia de IA (clasificación por texto)
+  const [sugerenciaIA, setSugerenciaIA] = useState(null);
+  const [clasificando, setClasificando] = useState(false);
+  const timeoutRef = useRef(null);
 
-  // ── Reset completo del formulario cada vez que se enfoca la pantalla ──
-  // Esto resuelve que queden los datos al navegar entre tabs
+  // ── Reset completo del formulario al enfocar la pantalla ──
   useFocusEffect(
     useCallback(() => {
       setMonto('');
@@ -109,7 +107,7 @@ export default function AgregarGasto() {
   const mostrarToast = (mensaje, tipo = 'exito') => {
     setToastMensaje(mensaje);
     setToastTipo(tipo);
-    setToastVisible(false); // reset para re-trigger el useEffect del Toast
+    setToastVisible(false);
     setTimeout(() => setToastVisible(true), 50);
   };
 
@@ -130,19 +128,15 @@ export default function AgregarGasto() {
   const handleCategoria = (cat) => {
     Haptics.selectionAsync();
     setCategoriaSeleccionada(cat);
-    setSugerenciaIA(null); // limpiar sugerencia si el usuario elige manualmente
+    setSugerenciaIA(null);
   };
 
-  // ── Clasificar descripción con IA — con debounce de 800ms ──
-  // Espera a que el usuario deje de escribir antes de llamar a la IA
+  // ── Clasificar descripción con IA — con debounce ──
   const handleDescripcionChange = (texto) => {
     setDescripcion(texto);
-    setSugerenciaIA(null); // limpiar sugerencia anterior
-
-    // Cancelar el timeout anterior si el usuario sigue escribiendo
+    setSugerenciaIA(null);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    // Solo clasificar si hay al menos 3 caracteres y no hay categoría manual seleccionada
     if (texto.trim().length >= 3) {
       setClasificando(true);
       timeoutRef.current = setTimeout(async () => {
@@ -155,13 +149,23 @@ export default function AgregarGasto() {
     }
   };
 
-  // ── Aceptar la sugerencia de la IA con un tap ──
+  // ── Aceptar la sugerencia de la IA ──
   const aceptarSugerencia = () => {
     if (sugerenciaIA) {
       setCategoriaSeleccionada(sugerenciaIA);
       setSugerenciaIA(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+  };
+
+  // ── Callback cuando la IA de voz devuelve datos ──
+  // Rellena el formulario automáticamente con lo que dijo el usuario
+  const handleResultadoVoz = (datos) => {
+    if (datos.monto && datos.monto !== '0') setMonto(datos.monto);
+    if (datos.categoria) setCategoriaSeleccionada(datos.categoria);
+    if (datos.descripcion) setDescripcion(datos.descripcion);
+    setSugerenciaIA(null);
+    mostrarToast('¡Gasto detectado por voz! Revisa y guarda.');
   };
 
   // ── Guardar gasto ──
@@ -190,7 +194,6 @@ export default function AgregarGasto() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
 
-      // Esperar que el usuario vea el toast antes de navegar
       setTimeout(() => {
         router.replace('/(tabs)/');
       }, 2200);
@@ -209,7 +212,6 @@ export default function AgregarGasto() {
       style={estilos.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Toast flotante — aparece arriba de todo */}
       <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       <ScrollView
@@ -251,6 +253,16 @@ export default function AgregarGasto() {
           ))}
         </View>
 
+        {/* ── Botón de voz — debajo del teclado, fácil con el pulgar ── */}
+        <View style={estilos.seccionVoz}>
+          <View style={estilos.separadorVoz}>
+            <View style={estilos.lineaSeparador} />
+            <Text style={estilos.textoSeparador}>o registra por voz</Text>
+            <View style={estilos.lineaSeparador} />
+          </View>
+          <BotonVoz onResultado={handleResultadoVoz} />
+        </View>
+
         {/* ── Descripción con clasificación IA ── */}
         <View style={estilos.seccion}>
           <Text style={estilos.seccionTitulo}>
@@ -261,12 +273,12 @@ export default function AgregarGasto() {
             placeholder="Ej: tacos de canasta, Uber al trabajo…"
             placeholderTextColor={COLORS.textMuted}
             value={descripcion}
-            onChangeText={handleDescripcionChange}  // ← usa el handler con IA en lugar de setDescripcion
+            onChangeText={handleDescripcionChange}
             maxLength={100}
             returnKeyType="done"
           />
 
-          {/* Spinner mientras la IA clasifica */}
+          {/* Spinner de clasificación */}
           {clasificando && (
             <View style={estilos.contenedorSugerencia}>
               <ActivityIndicator size="small" color={COLORS.primary} />
@@ -274,7 +286,7 @@ export default function AgregarGasto() {
             </View>
           )}
 
-          {/* Chip de sugerencia — solo aparece si hay sugerencia y no hay categoría elegida manualmente */}
+          {/* Chip de sugerencia de categoría */}
           {sugerenciaIA && (
             <TouchableOpacity
               style={estilos.chipSugerencia}
@@ -321,8 +333,6 @@ export default function AgregarGasto() {
         <View style={estilos.seccion}>
           <Text style={estilos.seccionTitulo}>Fecha</Text>
           <View style={estilos.fechaRow}>
-
-            {/* Botón Ayer */}
             <TouchableOpacity
               style={[
                 estilos.fechaBtn,
@@ -336,7 +346,6 @@ export default function AgregarGasto() {
               <Text style={estilos.fechaBtnTxt}>Ayer</Text>
             </TouchableOpacity>
 
-            {/* Botón Hoy */}
             <TouchableOpacity
               style={[
                 estilos.fechaBtn,
@@ -350,11 +359,9 @@ export default function AgregarGasto() {
               <Text style={estilos.fechaBtnTxt}>Hoy</Text>
             </TouchableOpacity>
 
-            {/* Botón para abrir el picker de fecha */}
             <TouchableOpacity
               style={[
                 estilos.fechaDisplay,
-                // Resaltar si no es hoy ni ayer (fecha personalizada)
                 fecha !== formatearFechaISO(new Date()) &&
                 fecha !== formatearFechaISO(new Date(Date.now() - 86400000)) &&
                 estilos.fechaBtnActivo,
@@ -368,10 +375,8 @@ export default function AgregarGasto() {
                 📅 {formatearFechaLegible(fecha)}
               </Text>
             </TouchableOpacity>
-
           </View>
 
-          {/* Selector nativo de fecha — solo visible cuando se abre */}
           {mostrarPicker && (
             <DateTimePicker
               value={new Date(fecha + 'T12:00:00')}
@@ -455,9 +460,7 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.error,
   },
-  toastEmoji: {
-    fontSize: 18,
-  },
+  toastEmoji: { fontSize: 18 },
   toastTexto: {
     color: COLORS.textPrimary,
     fontSize: 14,
@@ -492,10 +495,33 @@ const estilos = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // Sección de voz — botón + separador
+  seccionVoz: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    gap: 16,
+  },
+  separadorVoz: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+  },
+  lineaSeparador: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  textoSeparador: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+  },
+
   // Monto
   montoContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 20,
     paddingHorizontal: 20,
   },
   montoLabel: {
@@ -568,33 +594,6 @@ const estilos = StyleSheet.create({
     letterSpacing: 0,
   },
 
-  // Categorías
-  categoriasGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  categoriaBtn: {
-    width: '30%',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-  },
-  categoriaIcono: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  categoriaNombre: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-
   // Descripción
   inputDescripcion: {
     backgroundColor: COLORS.surface,
@@ -607,7 +606,7 @@ const estilos = StyleSheet.create({
     fontSize: 15,
   },
 
-  // ── Sugerencia de IA ──────────────────────
+  // Sugerencia IA
   contenedorSugerencia: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,9 +632,7 @@ const estilos = StyleSheet.create({
     gap: 6,
     alignSelf: 'flex-start',
   },
-  chipEmoji: {
-    fontSize: 16,
-  },
+  chipEmoji: { fontSize: 16 },
   chipTexto: {
     fontSize: 14,
     color: COLORS.primary,
@@ -645,6 +642,33 @@ const estilos = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     marginLeft: 4,
+  },
+
+  // Categorías
+  categoriasGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  categoriaBtn: {
+    width: '30%',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  categoriaIcono: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  categoriaNombre: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 
   // Fecha
