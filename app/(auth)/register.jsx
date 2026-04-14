@@ -3,7 +3,8 @@ import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, KeyboardAvoidingView,
-  Platform, ActivityIndicator, ScrollView
+  Platform, ActivityIndicator, ScrollView,
+  TouchableWithoutFeedback, Keyboard
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useAuth } from '../../hooks/useAuth'
@@ -19,7 +20,6 @@ export default function Register() {
   const router = useRouter()
 
   async function handleRegistro() {
-    // Validaciones antes de llamar a Supabase
     if (!nombre || !email || !password || !confirmPassword) {
       Alert.alert('Campos vacíos', 'Por favor completa todos los campos.')
       return
@@ -49,83 +49,85 @@ export default function Register() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: COLORS.fondo }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.contenedor} keyboardShouldPersistTaps="handled">
-
-        {/* Encabezado */}
-        <View style={styles.encabezado}>
-          <Text style={styles.titulo}>Crear cuenta</Text>
-          <Text style={styles.subtitulo}>Empieza a controlar tus finanzas</Text>
-        </View>
-
-        {/* Formulario */}
-        <View style={styles.formulario}>
-          <Text style={styles.etiqueta}>Nombre</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="¿Cómo te llamas?"
-            placeholderTextColor={COLORS.textoSecundario}
-            value={nombre}
-            onChangeText={setNombre}
-            autoCapitalize="words"
-          />
-
-          <Text style={styles.etiqueta}>Correo electrónico</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="tu@email.com"
-            placeholderTextColor={COLORS.textoSecundario}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          <Text style={styles.etiqueta}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Mínimo 6 caracteres"
-            placeholderTextColor={COLORS.textoSecundario}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <Text style={styles.etiqueta}>Confirmar contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Repite tu contraseña"
-            placeholderTextColor={COLORS.textoSecundario}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
-
-          <TouchableOpacity
-            style={[styles.boton, cargando && styles.botonDeshabilitado]}
-            onPress={handleRegistro}
-            disabled={cargando}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.contenedor}
+            keyboardShouldPersistTaps="handled"
           >
-            {cargando
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.botonTexto}>Crear cuenta</Text>
-            }
-          </TouchableOpacity>
+            <View style={styles.encabezado}>
+              <Text style={styles.titulo}>Crear cuenta</Text>
+              <Text style={styles.subtitulo}>Empieza a controlar tus finanzas</Text>
+            </View>
 
-          {/* Volver a login */}
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.linkTexto}>
-              ¿Ya tienes cuenta? <Text style={styles.linkDestacado}>Inicia sesión</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.formulario}>
+              <Text style={styles.etiqueta}>Nombre</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="¿Cómo te llamas?"
+                placeholderTextColor={COLORS.textSecondary}
+                value={nombre}
+                onChangeText={setNombre}
+                autoCapitalize="words"
+              />
 
-      </ScrollView>
-    </KeyboardAvoidingView>
+              <Text style={styles.etiqueta}>Correo electrónico</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="tu@email.com"
+                placeholderTextColor={COLORS.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.etiqueta}>Contraseña</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Mínimo 6 caracteres"
+                placeholderTextColor={COLORS.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+
+              <Text style={styles.etiqueta}>Confirmar contraseña</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Repite tu contraseña"
+                placeholderTextColor={COLORS.textSecondary}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+              />
+
+              <TouchableOpacity
+                style={[styles.boton, cargando && styles.botonDeshabilitado]}
+                onPress={handleRegistro}
+                disabled={cargando}
+              >
+                {cargando
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.botonTexto}>Crear cuenta</Text>
+                }
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => router.back()}>
+                <Text style={styles.linkTexto}>
+                  ¿Ya tienes cuenta? <Text style={styles.linkDestacado}>Inicia sesión</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </TouchableWithoutFeedback>
   )
 }
 
@@ -150,34 +152,34 @@ const styles = StyleSheet.create({
   titulo: {
     fontSize: 30,
     fontWeight: '800',
-    color: COLORS.texto,
+    color: COLORS.textPrimary,
   },
   subtitulo: {
     fontSize: 15,
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,
     marginTop: 6,
   },
   formulario: {
     gap: 8,
   },
   etiqueta: {
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,
     fontSize: 13,
     marginBottom: 4,
     marginTop: 8,
   },
   input: {
-    backgroundColor: COLORS.fondoInput,
-    color: COLORS.texto,
+    backgroundColor: COLORS.surface,
+    color: COLORS.textPrimary,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: COLORS.borde,
+    borderColor: COLORS.border,
   },
   boton: {
-    backgroundColor: COLORS.primario,
+    backgroundColor: COLORS.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -187,18 +189,18 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   botonTexto: {
-    color: '#fff',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '700',
   },
   linkTexto: {
-    color: COLORS.textoSecundario,
+    color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: 20,
     fontSize: 14,
   },
   linkDestacado: {
-    color: COLORS.primario,
+    color: COLORS.primary,
     fontWeight: '600',
   },
 })
