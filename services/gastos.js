@@ -22,7 +22,8 @@ export async function obtenerGastosMes(mes, anio) {
     .eq('user_id', (await supabase.auth.getUser()).data.user.id)
     .gte('fecha', fechaInicio)
     .lte('fecha', fechaFin)
-    .order('created_at', { ascending: false }); // ← ordenar por cuándo se registró
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
   return data;
@@ -46,7 +47,8 @@ export async function obtenerUltimosGastos(limite = 5) {
       )
     `)
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false }) // ← ordenar por cuándo se registró
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(limite);
 
   if (error) throw error;
@@ -69,7 +71,8 @@ export async function obtenerTodosLosGastos(userId) {
       )
     `)
     .eq('user_id', userId)
-    .order('created_at', { ascending: false }); // ← ordenar por cuándo se registró
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
   return data;
@@ -83,11 +86,7 @@ export async function registrarGasto(gasto) {
 
   const { data, error } = await supabase
     .from('gastos')
-    .insert([{
-      ...gasto,
-      user_id: user.id,
-      created_at: new Date().toISOString(), // ← timestamp exacto del momento de registro
-    }])
+    .insert([{ ...gasto, user_id: user.id }])
     .select()
     .single();
 

@@ -64,7 +64,11 @@ function agruparPorFecha(gastos) {
     if (!grupos[clave]) grupos[clave] = [];
     grupos[clave].push(gasto);
   }
-  return Object.entries(grupos).map(([title, data]) => ({ title, data }));
+  return Object.entries(grupos).map(([title, data]) => ({
+    title,
+    // dentro del mismo día, el más reciente registrado va primero
+    data: [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+  }));
 }
 
 function filtrarPorFecha(gastos, filtro) {
@@ -117,12 +121,18 @@ export default function HistorialScreen() {
   // ──────────────────────────────────────────
   // Cargar gastos desde Supabase
   // ──────────────────────────────────────────
-  async function cargarGastos() {
+    async function cargarGastos() {
     try {
-      setCargando(true);
-      setError(null);
-      const data = await obtenerTodosLosGastos(usuario.id);
-      setGastos(data);
+        setCargando(true);
+        setError(null);
+        const data = await obtenerTodosLosGastos(usuario.id);
+        // Supabase ya los trae ordenados, pero re-ordenamos en cliente
+        // por si hay gastos en caché o estado local desincronizado
+        const ordenados = [...data].sort((a, b) => {
+        if (b.fecha !== a.fecha) return b.fecha.localeCompare(a.fecha);
+        return new Date(b.created_at) - new Date(a.created_at);
+        });
+        setGastos(ordenados);
     } catch (e) {
       setError('No se pudieron cargar los gastos.');
       console.error('Error cargando gastos:', e);
