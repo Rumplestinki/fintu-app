@@ -27,24 +27,41 @@ export default function RootLayout() {
   // Inicialización: sesión + onboarding
   useEffect(() => {
     const inicializar = async () => {
-      try {
+    try {
         await verificarEstado();
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+        // Token inválido — limpiar y mandar a login
+        await supabase.auth.signOut();
+        setSesion(null);
+        } else {
         setSesion(session);
-      } catch (error) {
+        }
+    } catch (error) {
         console.error("Error inicializando app:", error);
-      } finally {
+        setSesion(null);
+    } finally {
         setCargando(false);
-      }
+    }
     };
 
     inicializar();
 
     // Escuchar cambios de sesión (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+    (event, session) => {
+        // Si el refresh token expiró, cerramos sesión limpiamente
+        if (event === 'TOKEN_REFRESHED' && !session) {
+        supabase.auth.signOut();
+        setSesion(null);
+        return;
+        }
+        if (event === 'SIGNED_OUT') {
+        setSesion(null);
+        return;
+        }
         setSesion(session);
-      }
+    }
     );
 
     return () => subscription.unsubscribe();

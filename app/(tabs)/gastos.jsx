@@ -1,5 +1,5 @@
 // /app/(tabs)/gastos.jsx
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -81,6 +81,7 @@ function filtrarPorFecha(gastos, filtro) {
 }
 
 const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
+
 const formatearFechaLegible = (fechaISO) => {
   const [año, mes, dia] = fechaISO.split('-');
   const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -163,7 +164,6 @@ export default function HistorialScreen() {
       Alert.alert('Categoría requerida', 'Selecciona una categoría');
       return;
     }
-
     try {
       setGuardando(true);
       const actualizado = await actualizarGasto(gastoEditando.id, {
@@ -172,8 +172,6 @@ export default function HistorialScreen() {
         descripcion: descripcionInput,
         fecha: fechaInput,
       });
-
-      // Actualizar lista local sin recargar todo
       setGastos((prev) =>
         prev.map((g) =>
           g.id === gastoEditando.id ? { ...g, ...actualizado } : g
@@ -237,39 +235,33 @@ export default function HistorialScreen() {
 
   const secciones = useMemo(() => agruparPorFecha(gastosFiltrados), [gastosFiltrados]);
 
-  const totalPeriodo = useMemo(
-    () => gastosFiltrados.reduce((sum, g) => sum + Number(g.monto), 0),
-    [gastosFiltrados]
+  // ──────────────────────────────────────────
+  // Renders — definidos como const ANTES del return
+  // ──────────────────────────────────────────
+
+  const renderEncabezado = ({ section }) => (
+    <View style={styles.encabezadoSeccion}>
+      <Text style={styles.textoEncabezado}>{section.title}</Text>
+      <View style={styles.lineaDivisora} />
+    </View>
   );
 
-  // ──────────────────────────────────────────
-  // Renders de la lista
-  // ──────────────────────────────────────────
-  function renderEncabezado({ section }) {
-    return (
-      <View style={styles.encabezadoSeccion}>
-        <Text style={styles.textoEncabezado}>{section.title}</Text>
-        <View style={styles.lineaDivisora} />
-      </View>
-    );
-  }
+  const renderGasto = ({ item }) => (
+    <GastoCard
+      gasto={item}
+      onPress={() => abrirEdicion(item)}
+      onDelete={() => confirmarEliminacion(item.id)}
+    />
+  );
 
-  function renderGasto({ item }) {
-    return (
-      <GastoCard
-        gasto={item}
-        onPress={() => abrirEdicion(item)}
-        onDelete={() => confirmarEliminacion(item.id)}
-      />
-    );
-  }
-
-  function EstadoVacio() {
+  const EstadoVacio = () => {
     const mensaje = busqueda.trim()
       ? `Sin resultados para "${busqueda}"`
-      : filtroFecha === 'mes' ? 'Sin gastos este mes'
-      : filtroFecha === 'anterior' ? 'Sin gastos el mes anterior'
-      : 'Aún no tienes gastos registrados';
+      : filtroFecha === 'mes'
+        ? 'Sin gastos este mes'
+        : filtroFecha === 'anterior'
+          ? 'Sin gastos el mes anterior'
+          : 'Aún no tienes gastos registrados';
     return (
       <View style={styles.contenedorVacio}>
         <Text style={styles.iconoVacio}>🔍</Text>
@@ -279,75 +271,70 @@ export default function HistorialScreen() {
         </Text>
       </View>
     );
-  }
+  };
 
-  function Encabezado() {
-    return (
-      <View>
-        {/* Buscador */}
-        <View style={styles.contenedorBusqueda}>
-          <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
-          <TextInput
-            style={styles.inputBusqueda}
-            placeholder="Buscar gasto..."
-            placeholderTextColor={COLORS.textSecondary}
-            value={busqueda}
-            onChangeText={setBusqueda}
-          />
-          {busqueda.length > 0 && (
-            <Pressable onPress={() => setBusqueda('')}>
-              <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
-            </Pressable>
-          )}
+  const Encabezado = () => (
+    <View>
+      {/* Filtros fecha */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.contenedorChips}
+      >
+        {FILTROS_FECHA.map((filtro) => (
+          <Pressable
+            key={filtro.id}
+            onPress={() => setFiltroFecha(filtro.id)}
+            style={[styles.chip, filtroFecha === filtro.id && styles.chipActivo]}
+          >
+            <Text style={[
+              styles.textoChip,
+              filtroFecha === filtro.id && styles.textoChipActivo,
+            ]}>
+              {filtro.label}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* Filtros categoría */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.contenedorChips}
+      >
+        {CATEGORIAS_FILTER.map((cat) => (
+          <Pressable
+            key={cat.id}
+            onPress={() => setCategoriaActiva(cat.id)}
+            style={[styles.chip, categoriaActiva === cat.id && styles.chipActivo]}
+          >
+            <Text style={styles.emojiChip}>{cat.icono}</Text>
+            <Text style={[
+              styles.textoChip,
+              categoriaActiva === cat.id && styles.textoChipActivo,
+            ]}>
+              {cat.nombre}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* Resumen del período */}
+      {!cargando && gastosFiltrados.length > 0 && (
+        <View style={styles.resumenPeriodo}>
+          <Text style={styles.textoResumen}>
+            {gastosFiltrados.length} gasto{gastosFiltrados.length !== 1 ? 's' : ''} · Total{' '}
+            <Text style={styles.totalPeriodo}>
+              ${gastosFiltrados
+                .reduce((s, g) => s + Number(g.monto), 0)
+                .toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+            </Text>
+          </Text>
         </View>
-
-        {/* Filtros fecha */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contenedorChips}>
-          {FILTROS_FECHA.map((filtro) => (
-            <Pressable
-              key={filtro.id}
-              onPress={() => setFiltroFecha(filtro.id)}
-              style={[styles.chip, filtroFecha === filtro.id && styles.chipActivo]}
-            >
-              <Text style={[styles.textoChip, filtroFecha === filtro.id && styles.textoChipActivo]}>
-                {filtro.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Filtros categoría */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contenedorChips}>
-          {CATEGORIAS_FILTER.map((cat) => (
-            <Pressable
-              key={cat.id}
-              onPress={() => setCategoriaActiva(cat.id)}
-              style={[styles.chip, categoriaActiva === cat.id && styles.chipActivo]}
-            >
-              <Text style={styles.emojiChip}>{cat.icono}</Text>
-              <Text style={[styles.textoChip, categoriaActiva === cat.id && styles.textoChipActivo]}>
-                {cat.nombre}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Resumen */}
-        {!cargando && gastosFiltrados.length > 0 && (
-          <View style={styles.resumenPeriodo}>
-            <Text style={styles.textoResumen}>
-              {gastosFiltrados.length} gasto{gastosFiltrados.length !== 1 ? 's' : ''}
-            </Text>
-            <Text style={styles.montoResumen}>
-              {new Intl.NumberFormat('es-MX', {
-                style: 'currency', currency: 'MXN', minimumFractionDigits: 0,
-              }).format(totalPeriodo)}
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  }
+      )}
+    </View>
+  );
 
   // ──────────────────────────────────────────
   // Render principal
@@ -361,6 +348,26 @@ export default function HistorialScreen() {
         <Pressable onPress={cargarGastos}>
           <Ionicons name="refresh-outline" size={22} color={COLORS.textSecondary} />
         </Pressable>
+      </View>
+
+      {/* Buscador — fuera del SectionList para que el teclado no se cierre */}
+      <View style={styles.contenedorBusqueda}>
+        <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
+        <TextInput
+          style={styles.inputBusqueda}
+          placeholder="Buscar gasto..."
+          placeholderTextColor={COLORS.textSecondary}
+          value={busqueda}
+          onChangeText={setBusqueda}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+        />
+        {busqueda.length > 0 && (
+          <Pressable onPress={() => setBusqueda('')}>
+            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
+          </Pressable>
+        )}
       </View>
 
       {cargando ? (
@@ -378,7 +385,9 @@ export default function HistorialScreen() {
       ) : (
         <SectionList
           sections={secciones}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
           renderItem={renderGasto}
           renderSectionHeader={renderEncabezado}
           ListHeaderComponent={<Encabezado />}
@@ -563,6 +572,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginHorizontal: 20, marginTop: 4, marginBottom: 12,
   },
   textoResumen: { color: COLORS.textSecondary, fontSize: 13 },
+  totalPeriodo: { color: COLORS.primary, fontWeight: '700' },
   montoResumen: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
 
   // Lista
