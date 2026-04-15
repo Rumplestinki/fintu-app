@@ -1,5 +1,5 @@
 // /app/(tabs)/gastos.jsx
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -24,26 +24,17 @@ import { useAuth } from '../../hooks/useAuth';
 import { obtenerTodosLosGastos, eliminarGasto, actualizarGasto } from '../../services/gastos';
 import GastoCard from '../../components/GastoCard';
 
-// ──────────────────────────────────────────
-// Categorías para el filtro de chips
-// ──────────────────────────────────────────
 const CATEGORIAS_FILTER = [
   { id: 'todos', nombre: 'Todos', icono: '🗂️' },
   ...CATEGORIAS.map((c) => ({ id: c.id, nombre: c.nombre, icono: c.icono })),
 ];
 
-// ──────────────────────────────────────────
-// Opciones de filtro por fecha
-// ──────────────────────────────────────────
 const FILTROS_FECHA = [
   { id: 'mes', label: 'Este mes' },
   { id: 'anterior', label: 'Mes anterior' },
   { id: 'todo', label: 'Todo' },
 ];
 
-// ──────────────────────────────────────────
-// Helpers de fecha
-// ──────────────────────────────────────────
 function etiquetaDeFecha(fechaISO) {
   const fecha = new Date(fechaISO);
   const hoy = new Date();
@@ -66,7 +57,6 @@ function agruparPorFecha(gastos) {
   }
   return Object.entries(grupos).map(([title, data]) => ({
     title,
-    // dentro del mismo día, el más reciente registrado va primero
     data: [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
   }));
 }
@@ -92,24 +82,18 @@ const formatearFechaLegible = (fechaISO) => {
   return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
 };
 
-// ──────────────────────────────────────────
-// Pantalla principal: Historial de gastos
-// ──────────────────────────────────────────
 export default function HistorialScreen() {
   const insets = useSafeAreaInsets();
   const { usuario } = useAuth();
 
-  // Estado de datos
   const [gastos, setGastos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
-  // Estado de filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('mes');
   const [categoriaActiva, setCategoriaActiva] = useState('todos');
 
-  // Estado del modal de edición
   const [modalVisible, setModalVisible] = useState(false);
   const [gastoEditando, setGastoEditando] = useState(null);
   const [montoInput, setMontoInput] = useState('');
@@ -118,21 +102,18 @@ export default function HistorialScreen() {
   const [fechaInput, setFechaInput] = useState('');
   const [guardando, setGuardando] = useState(false);
 
-  // ──────────────────────────────────────────
-  // Cargar gastos desde Supabase
-  // ──────────────────────────────────────────
-    async function cargarGastos() {
+  const scrollCategoriasRef = useRef(null);
+
+  async function cargarGastos() {
     try {
-        setCargando(true);
-        setError(null);
-        const data = await obtenerTodosLosGastos(usuario.id);
-        // Supabase ya los trae ordenados, pero re-ordenamos en cliente
-        // por si hay gastos en caché o estado local desincronizado
-        const ordenados = [...data].sort((a, b) => {
+      setCargando(true);
+      setError(null);
+      const data = await obtenerTodosLosGastos(usuario.id);
+      const ordenados = [...data].sort((a, b) => {
         if (b.fecha !== a.fecha) return b.fecha.localeCompare(a.fecha);
         return new Date(b.created_at) - new Date(a.created_at);
-        });
-        setGastos(ordenados);
+      });
+      setGastos(ordenados);
     } catch (e) {
       setError('No se pudieron cargar los gastos.');
       console.error('Error cargando gastos:', e);
@@ -141,16 +122,12 @@ export default function HistorialScreen() {
     }
   }
 
-  // Recargar cada vez que el usuario entra a esta pantalla
   useFocusEffect(
     useCallback(() => {
       if (usuario) cargarGastos();
     }, [usuario])
   );
 
-  // ──────────────────────────────────────────
-  // Abrir modal con los datos del gasto
-  // ──────────────────────────────────────────
   function abrirEdicion(gasto) {
     const categoria = getCategoriaByDbId(gasto.categoria_id);
     setGastoEditando(gasto);
@@ -161,9 +138,6 @@ export default function HistorialScreen() {
     setModalVisible(true);
   }
 
-  // ──────────────────────────────────────────
-  // Guardar cambios del gasto editado
-  // ──────────────────────────────────────────
   async function handleGuardarEdicion() {
     const monto = parseFloat(montoInput);
     if (!montoInput || isNaN(monto) || monto <= 0) {
@@ -183,9 +157,7 @@ export default function HistorialScreen() {
         fecha: fechaInput,
       });
       setGastos((prev) =>
-        prev.map((g) =>
-          g.id === gastoEditando.id ? { ...g, ...actualizado } : g
-        )
+        prev.map((g) => g.id === gastoEditando.id ? { ...g, ...actualizado } : g)
       );
       setModalVisible(false);
     } catch (e) {
@@ -196,9 +168,6 @@ export default function HistorialScreen() {
     }
   }
 
-  // ──────────────────────────────────────────
-  // Eliminar gasto con confirmación
-  // ──────────────────────────────────────────
   function confirmarEliminacion(gastoId) {
     Alert.alert(
       'Eliminar gasto',
@@ -222,9 +191,6 @@ export default function HistorialScreen() {
     );
   }
 
-  // ──────────────────────────────────────────
-  // Filtrado en tiempo real
-  // ──────────────────────────────────────────
   const gastosFiltrados = useMemo(() => {
     let resultado = filtrarPorFecha(gastos, filtroFecha);
     if (categoriaActiva !== 'todos') {
@@ -244,10 +210,6 @@ export default function HistorialScreen() {
   }, [gastos, filtroFecha, categoriaActiva, busqueda]);
 
   const secciones = useMemo(() => agruparPorFecha(gastosFiltrados), [gastosFiltrados]);
-
-  // ──────────────────────────────────────────
-  // Renders — definidos como const ANTES del return
-  // ──────────────────────────────────────────
 
   const renderEncabezado = ({ section }) => (
     <View style={styles.encabezadoSeccion}>
@@ -285,52 +247,6 @@ export default function HistorialScreen() {
 
   const Encabezado = () => (
     <View>
-      {/* Filtros fecha */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.contenedorChips}
-      >
-        {FILTROS_FECHA.map((filtro) => (
-          <Pressable
-            key={filtro.id}
-            onPress={() => setFiltroFecha(filtro.id)}
-            style={[styles.chip, filtroFecha === filtro.id && styles.chipActivo]}
-          >
-            <Text style={[
-              styles.textoChip,
-              filtroFecha === filtro.id && styles.textoChipActivo,
-            ]}>
-              {filtro.label}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      {/* Filtros categoría */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.contenedorChips}
-      >
-        {CATEGORIAS_FILTER.map((cat) => (
-          <Pressable
-            key={cat.id}
-            onPress={() => setCategoriaActiva(cat.id)}
-            style={[styles.chip, categoriaActiva === cat.id && styles.chipActivo]}
-          >
-            <Text style={styles.emojiChip}>{cat.icono}</Text>
-            <Text style={[
-              styles.textoChip,
-              categoriaActiva === cat.id && styles.textoChipActivo,
-            ]}>
-              {cat.nombre}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      {/* Resumen del período */}
       {!cargando && gastosFiltrados.length > 0 && (
         <View style={styles.resumenPeriodo}>
           <Text style={styles.textoResumen}>
@@ -346,9 +262,6 @@ export default function HistorialScreen() {
     </View>
   );
 
-  // ──────────────────────────────────────────
-  // Render principal
-  // ──────────────────────────────────────────
   return (
     <View style={[styles.contenedor, { paddingTop: insets.top }]}>
 
@@ -360,7 +273,7 @@ export default function HistorialScreen() {
         </Pressable>
       </View>
 
-      {/* Buscador — fuera del SectionList para que el teclado no se cierre */}
+      {/* Buscador — fijo, fuera del SectionList */}
       <View style={styles.contenedorBusqueda}>
         <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} />
         <TextInput
@@ -380,6 +293,61 @@ export default function HistorialScreen() {
         )}
       </View>
 
+        {/* Filtros de fecha */}
+        <View style={{ height: 42 }}>
+        <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filasChips}
+            keyboardShouldPersistTaps="handled"
+            alwaysBounceHorizontal={false}
+        >
+            {FILTROS_FECHA.map((filtro) => (
+            <Pressable
+                key={filtro.id}
+                onPress={() => setFiltroFecha(filtro.id)}
+                style={[styles.chip, filtroFecha === filtro.id && styles.chipActivo]}
+            >
+                <Text style={[
+                styles.textoChip,
+                filtroFecha === filtro.id && styles.textoChipActivo,
+                ]}>
+                {filtro.label}
+                </Text>
+            </Pressable>
+            ))}
+        </ScrollView>
+        </View>
+
+        {/* Filtros de categoría */}
+        <View style={{ height: 42 }}>
+        <ScrollView
+            ref={scrollCategoriasRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filasChips}
+            keyboardShouldPersistTaps="handled"
+            alwaysBounceHorizontal={false}
+        >
+            {CATEGORIAS_FILTER.map((cat) => (
+            <Pressable
+                key={cat.id}
+                onPress={() => setCategoriaActiva(cat.id)}
+                style={[styles.chip, categoriaActiva === cat.id && styles.chipActivo]}
+            >
+                <Text style={styles.emojiChip}>{cat.icono}</Text>
+                <Text style={[
+                styles.textoChip,
+                categoriaActiva === cat.id && styles.textoChipActivo,
+                ]}>
+                {cat.nombre}
+                </Text>
+            </Pressable>
+            ))}
+        </ScrollView>
+        </View>
+
+      {/* Contenido */}
       {cargando ? (
         <View style={styles.contenedorCarga}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -408,7 +376,7 @@ export default function HistorialScreen() {
         />
       )}
 
-      {/* ── MODAL DE EDICIÓN ── */}
+      {/* Modal de edición */}
       <Modal
         visible={modalVisible}
         transparent
@@ -421,7 +389,6 @@ export default function HistorialScreen() {
 
               <View style={styles.modalHandle} />
 
-              {/* Header del modal */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitulo}>Editar gasto</Text>
                 <Pressable
@@ -432,7 +399,6 @@ export default function HistorialScreen() {
                 </Pressable>
               </View>
 
-              {/* Monto */}
               <Text style={styles.modalLabel}>Monto</Text>
               <View style={styles.inputMontoContenedor}>
                 <Text style={styles.inputPrefijo}>$</Text>
@@ -446,7 +412,6 @@ export default function HistorialScreen() {
                 />
               </View>
 
-              {/* Categorías */}
               <Text style={styles.modalLabel}>Categoría</Text>
               <ScrollView
                 horizontal
@@ -479,7 +444,6 @@ export default function HistorialScreen() {
                 })}
               </ScrollView>
 
-              {/* Descripción */}
               <Text style={styles.modalLabel}>Descripción</Text>
               <TextInput
                 style={styles.inputDescripcion}
@@ -490,7 +454,6 @@ export default function HistorialScreen() {
                 maxLength={100}
               />
 
-              {/* Fecha */}
               <Text style={styles.modalLabel}>Fecha</Text>
               <View style={styles.fechaRow}>
                 <Pressable
@@ -518,7 +481,6 @@ export default function HistorialScreen() {
                 </View>
               </View>
 
-              {/* Botones */}
               <View style={styles.modalBotones}>
                 <Pressable style={styles.botonCancelar} onPress={() => setModalVisible(false)}>
                   <Text style={styles.botonCancelarTexto}>Cancelar</Text>
@@ -545,9 +507,6 @@ export default function HistorialScreen() {
   );
 }
 
-// ──────────────────────────────────────────
-// Estilos
-// ──────────────────────────────────────────
 const styles = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   cabecera: {
@@ -565,11 +524,24 @@ const styles = StyleSheet.create({
   },
   inputBusqueda: { flex: 1, color: COLORS.textPrimary, fontSize: 15 },
 
-  // Chips
-  contenedorChips: { paddingHorizontal: 20, paddingBottom: 10, gap: 8, flexDirection: 'row' },
+  // Chips — el contentContainerStyle del ScrollView horizontal
+  // NO debe tener flexDirection ni alignItems, solo padding y gap
+  // El ScrollView horizontal ya se encarga de la dirección
+  filasChips: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    gap: 8,
+  },
+
+  // Chip individual — tamaño determinado solo por su contenido interno
   chip: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 4,
   },
   chipActivo: { backgroundColor: COLORS.primary },
   emojiChip: { fontSize: 14 },
@@ -639,7 +611,6 @@ const styles = StyleSheet.create({
   },
   modalLabel: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 8 },
 
-  // Input monto
   inputMontoContenedor: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.background, borderRadius: 12,
@@ -651,7 +622,6 @@ const styles = StyleSheet.create({
     fontWeight: '600', paddingVertical: 12,
   },
 
-  // Categorías en modal
   categoriasScroll: { gap: 8, paddingBottom: 16 },
   categoriaChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -662,14 +632,12 @@ const styles = StyleSheet.create({
   categoriaChipIcono: { fontSize: 18 },
   categoriaChipTexto: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '500' },
 
-  // Descripción
   inputDescripcion: {
     backgroundColor: COLORS.background, borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 12,
     color: COLORS.textPrimary, fontSize: 15, marginBottom: 16,
   },
 
-  // Fecha
   fechaRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
   fechaBtn: {
     paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.background,
@@ -684,7 +652,6 @@ const styles = StyleSheet.create({
   },
   fechaDisplayTexto: { color: COLORS.textPrimary, fontSize: 13 },
 
-  // Botones modal
   modalBotones: { flexDirection: 'row', gap: 10 },
   botonCancelar: {
     flex: 1, height: 48, borderRadius: 12, backgroundColor: COLORS.background,
