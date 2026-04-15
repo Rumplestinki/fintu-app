@@ -11,6 +11,21 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemi
 const LISTA_CATEGORIAS = CATEGORIAS.map(c => `${c.id} (${c.nombre})`).join(', ');
 
 // ──────────────────────────────────────────
+// Helpers de fecha
+// ──────────────────────────────────────────
+function getFechaHoy() {
+  return new Date().toISOString().split('T')[0]; // "2025-04-14"
+}
+
+function getFechaAyer() {
+  return new Date(Date.now() - 86400000).toISOString().split('T')[0]; // "2025-04-13"
+}
+
+function getFechaHaceNDias(n) {
+  return new Date(Date.now() - n * 86400000).toISOString().split('T')[0];
+}
+
+// ──────────────────────────────────────────
 // Pedir permisos de micrófono
 // ──────────────────────────────────────────
 export async function pedirPermisoMicrofono() {
@@ -20,7 +35,7 @@ export async function pedirPermisoMicrofono() {
 
 // ──────────────────────────────────────────
 // Procesar audio con Gemini
-// Convierte el archivo a base64 y extrae monto, categoría y descripción
+// Convierte el archivo a base64 y extrae monto, categoría, descripción y fecha
 // ──────────────────────────────────────────
 export async function procesarAudioConGemini(audioUri) {
   if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurada');
@@ -29,15 +44,39 @@ export async function procesarAudioConGemini(audioUri) {
     encoding: FileSystem.EncodingType.Base64,
   });
 
+  // Calcular fechas de referencia antes de armar el prompt
+  const HOY = getFechaHoy();
+  const AYER = getFechaAyer();
+  const ANTEAYER = getFechaHaceNDias(2);
+
   const prompt = `Eres un asistente experto en finanzas personales para México.
 Tu ÚNICA función es escuchar el audio y extraer datos de un gasto.
+
+═══════════════════════════════
+REFERENCIA DE FECHAS — MUY IMPORTANTE
+═══════════════════════════════
+Hoy es: ${HOY}
+Ayer fue: ${AYER}
+Anteayer fue: ${ANTEAYER}
+El año actual es: ${new Date().getFullYear()}
+
+Usa estas fechas para interpretar lo que dice el usuario:
+- "hoy" → ${HOY}
+- "ayer" → ${AYER}
+- "anteayer" → ${ANTEAYER}
+- "el lunes", "el martes", etc → calcula el día más reciente de esa semana antes de hoy
+- "el 15 de abril" → ${new Date().getFullYear()}-04-15
+- "el 10 de marzo" → ${new Date().getFullYear()}-03-10
+- "el 3" o "el día 3" → ${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-03
+- Si NO menciona fecha → usa ${HOY}
+- NUNCA pongas una fecha futura. Si el cálculo da fecha futura, usa el año anterior.
 
 ═══════════════════════════════
 PASO 1 — ¿ES UN GASTO?
 ═══════════════════════════════
 Si el audio es un saludo, pregunta, prueba, ruido o conversación general
 que NO menciona ninguna compra, pago o gasto, responde EXACTAMENTE:
-{"monto": 0, "categoria_id": "otros", "descripcion": "", "es_gasto": false}
+{"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha": "${HOY}", "es_gasto": false}
 
 ═══════════════════════════════
 PASO 2 — EXTRAER MONTO
@@ -161,15 +200,22 @@ PASO 4 — DESCRIPCIÓN
 Escribe una descripción corta y natural en español (máximo 40 caracteres).
 Usa el nombre del lugar o producto mencionado.
 Ejemplos: "Uber al trabajo", "Tacos en el mercado", "Netflix mensual",
-"Despensa Walmart", "Consulta médica", "Gasolina Pemex", "Foco para sala",
-"Tenis Nike", "Croquetas Purina", "Crunchyroll mensual"
+"Despensa Walmart", "Consulta médica", "Gasolina Pemex", "Coca Cola Oxxo"
+
+═══════════════════════════════
+PASO 5 — FECHA DEL GASTO
+═══════════════════════════════
+Determina cuándo ocurrió el gasto según lo que dice el usuario.
+Usa las fechas de referencia del inicio de este prompt.
+Devuelve la fecha en formato YYYY-MM-DD.
+Si no menciona fecha, usa: ${HOY}
 
 ═══════════════════════════════
 FORMATO DE RESPUESTA
 ═══════════════════════════════
 Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown, sin backticks.
-Si es gasto:    {"monto": 150, "categoria_id": "transporte", "descripcion": "Uber al trabajo", "es_gasto": true}
-Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "es_gasto": false}`;
+Si es gasto:    {"monto": 150, "categoria_id": "transporte", "descripcion": "Uber al trabajo", "fecha": "2025-04-13", "es_gasto": true}
+Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha": "${HOY}", "es_gasto": false}`;
 
   const response = await fetch(GEMINI_URL, {
     method: 'POST',
@@ -204,9 +250,20 @@ Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "es_gas
 
   const categoria = CATEGORIAS.find(c => c.id === resultado.categoria_id) || CATEGORIAS[8];
 
+  // Validar que la fecha devuelta por Gemini tenga formato correcto
+  // Si no, usar hoy como fallback
+  const fechaRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const fechaFinal = resultado.fecha && fechaRegex.test(resultado.fecha)
+    ? resultado.fecha
+    : HOY;
+
+  // Nunca permitir fechas futuras
+  const fechaResultado = fechaFinal > HOY ? HOY : fechaFinal;
+
   return {
     monto: String(resultado.monto || 0),
     categoria,
     descripcion: resultado.descripcion || '',
+    fecha: fechaResultado, // ← nuevo campo que antes no existía
   };
 }

@@ -159,14 +159,13 @@ export default function Dashboard() {
     }
 
     try {
-      setGuardandoVoz(true);
-      await registrarGasto({
-        monto: parseFloat(datos.monto),
-        categoria_id: datos.categoria?.dbId || 9,
-        descripcion: datos.descripcion || '',
-        fecha: formatearFechaISO(new Date()),
-        origen: 'voz',
-      });
+        await registrarGasto({
+            monto: parseFloat(datos.monto),
+            categoria_id: datos.categoria?.dbId || 9,
+            descripcion: datos.descripcion || '',
+            fecha: datos.fecha || formatearFechaISO(new Date()),  // ← usa la fecha del audio, hoy como fallback
+            origen: 'voz',
+        });
 
       setModalVozVisible(false);
       setGuardandoVoz(false);
@@ -342,9 +341,9 @@ export default function Dashboard() {
             <View style={estilos.ejemplos}>
               <Text style={estilos.ejemplosTitulo}>Ejemplos:</Text>
               <Text style={estilos.ejemploTexto}>"Gasté 80 pesos en el Oxxo"</Text>
-              <Text style={estilos.ejemploTexto}>"150 de Uber"</Text>
-              <Text style={estilos.ejemploTexto}>"Pagué 500 de renta"</Text>
-              <Text style={estilos.ejemploTexto}>"Compré unos tenis Nike en 1200"</Text>
+              <Text style={estilos.ejemploTexto}>"Ayer pagué 150 de Uber"</Text>
+              <Text style={estilos.ejemploTexto}>"El 10 gasté 500 en el super"</Text>
+              <Text style={estilos.ejemploTexto}>"Compré tenis Nike el martes en 1200"</Text>
             </View>
 
             {!guardandoVoz && (
