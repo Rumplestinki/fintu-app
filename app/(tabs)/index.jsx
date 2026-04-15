@@ -540,3 +540,4 @@ const estilos = StyleSheet.create({
   btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
   btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });
+
