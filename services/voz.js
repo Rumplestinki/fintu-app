@@ -11,18 +11,25 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemi
 const LISTA_CATEGORIAS = CATEGORIAS.map(c => `${c.id} (${c.nombre})`).join(', ');
 
 // ──────────────────────────────────────────
-// Helpers de fecha
+// Helpers de fecha locales
 // ──────────────────────────────────────────
+const toLocalISO = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function getFechaHoy() {
-  return new Date().toISOString().split('T')[0]; // "2025-04-14"
+  return toLocalISO(new Date());
 }
 
 function getFechaAyer() {
-  return new Date(Date.now() - 86400000).toISOString().split('T')[0]; // "2025-04-13"
+  return toLocalISO(new Date(Date.now() - 86400000));
 }
 
 function getFechaHaceNDias(n) {
-  return new Date(Date.now() - n * 86400000).toISOString().split('T')[0];
+  return toLocalISO(new Date(Date.now() - n * 86400000));
 }
 
 // ──────────────────────────────────────────
@@ -45,9 +52,12 @@ export async function procesarAudioConGemini(audioUri) {
   });
 
   // Calcular fechas de referencia antes de armar el prompt
+  const d = new Date();
   const HOY = getFechaHoy();
   const AYER = getFechaAyer();
   const ANTEAYER = getFechaHaceNDias(2);
+  const ANIO = d.getFullYear();
+  const MES = String(d.getMonth() + 1).padStart(2, '0');
 
   const prompt = `Eres un asistente experto en finanzas personales para México.
 Tu ÚNICA función es escuchar el audio y extraer datos de un gasto.
@@ -58,23 +68,24 @@ REFERENCIA DE FECHAS — MUY IMPORTANTE
 Hoy es: ${HOY}
 Ayer fue: ${AYER}
 Anteayer fue: ${ANTEAYER}
-El año actual es: ${new Date().getFullYear()}
+El año actual es: ${ANIO}
+El mes actual es: ${MES}
 
 Usa estas fechas para interpretar lo que dice el usuario:
 - "hoy" → ${HOY}
 - "ayer" → ${AYER}
 - "anteayer" → ${ANTEAYER}
 - "el lunes", "el martes", etc → calcula el día más reciente de esa semana antes de hoy
-- "el 15 de abril" → ${new Date().getFullYear()}-04-15
-- "el 10 de marzo" → ${new Date().getFullYear()}-03-10
-- "el 3" o "el día 3" → ${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-03
+- "el 15 de abril" → ${ANIO}-04-15
+- "el 10 de marzo" → ${ANIO}-03-10
+- "el 3" o "el día 3" → ${ANIO}-${MES}-03
 - Si NO menciona fecha → usa ${HOY}
-- NUNCA pongas una fecha futura. Si el cálculo da fecha futura, usa el año anterior.
+- NUNCA pongas una fecha futura. Si el cálculo da fecha futura, usa el mes o año anterior según corresponda.
 
 ═══════════════════════════════
 PASO 1 — ¿ES UN GASTO?
 ═══════════════════════════════
-Si el audio es un saludo, pregunta, prueba, ruido o conversación general
+Si the audio es un saludo, pregunta, prueba, ruido o conversación general
 que NO menciona ninguna compra, pago o gasto, responde EXACTAMENTE:
 {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha": "${HOY}", "es_gasto": false}
 
@@ -84,138 +95,44 @@ PASO 2 — EXTRAER MONTO
 Escucha el número con atención. El usuario puede decir:
 - "gasté 150", "pagué 80 pesos", "me costó 35", "son 200"
 - "ciento cincuenta", "ochenta pesos", "doscientos"
-- "150 de uber", "50 en tacos", "32 al Oxxo"
-- "mil quinientos", "dos mil", "quinientos pesos"
 Extrae SOLO el número. Si no se entiende el monto, usa 0.
 
 ═══════════════════════════════
 PASO 3 — CLASIFICAR CATEGORÍA
-═══════════════════════════════
+════════════───────────────────
 Elige UNA categoría: ${LISTA_CATEGORIAS}
 
-REGLAS DE CLASIFICACIÓN:
-
-🚗 transporte:
-  Uber, Didi, Cabify, taxi, camión, combi, microbús, metro, metrobús,
-  tren, Cablebús, trolebús, gasolina, gas para el carro, estacionamiento,
-  caseta, peaje, llanta, taller mecánico, aceite, verificación, tenencia,
-  pasaje, boleto de autobús, ADO, ETN, Estrella Blanca
-
-🍔 comida:
-  tacos, tortas, burritos, tamales, quesadillas, gorditas, enchiladas,
-  pozole, birria, carnitas, sopes, tostadas, hamburguesa, pizza, sushi,
-  McDonald's, Burger King, KFC, Domino's, Pizza Hut, Subway, Starbucks,
-  café, restaurante, comida corrida, cocina económica, fonda,
-  Walmart, Chedraui, Soriana, La Comer, Costco, Sam's Club,
-  Oxxo, 7-Eleven, tienda, abarrotes, mercado, verduras, frutas,
-  carne, pollo, pescado, despensa, mandado, super, supermercado,
-  Rappi, Uber Eats, DiDi Food, Sin Delantal, comida a domicilio,
-  snack, botana, dulce, refresco, agua, cerveza, mezcal, vino
-
-🏠 renta:
-  renta, departamento, cuarto, casa, alquiler, hipoteca,
-  mensualidad de la casa, mantenimiento, condominio, fraccionamiento,
-  predial, cuota vecinal, administración del edificio
-
-🎬 entretenimiento:
-  cine, Cinépolis, Cinemex, concierto, teatro, evento, partido,
-  estadio, museo, parque, zoológico, antro, bar, discoteca, billar,
-  boliche, escape room, karaoke, arcade, videojuego, juego,
-  Steam, PlayStation Store, Xbox Game Pass, Nintendo eShop,
-  salida, paseo, diversión, bebidas en bar, cover
-
-💊 salud:
-  doctor, médico, dentista, consulta, farmacia, medicamento,
-  medicina, pastilla, cápsula, jarabe, Farmacias del Ahorro,
-  Farmacias Guadalajara, Benavides, Cruz Verde, hospital, clínica,
-  laboratorio, análisis, radiografía, ultrasonido, psicólogo,
-  terapia, óptica, lentes, audífono, gym, gimnasio, CrossFit,
-  yoga, pilates, vitaminas, suplementos, proteína, creatina
-
-📚 educacion:
-  colegio, escuela, universidad, UNAM, Tec, IPN, Ibero, UAM,
-  colegiatura, inscripción, curso, clase, taller, diplomado,
-  certificación, libro, libreta, cuaderno, útiles, papelería,
-  Udemy, Coursera, Platzi, LinkedIn Learning, idiomas, inglés,
-  capacitación, examen, TOEFL, GRE
-
-💡 servicios:
-  CFE, luz, electricidad, Telmex, internet, cable, Izzi, Megacable,
-  Total Play, Sky, Dish, teléfono, celular, Telcel, AT&T, Movistar,
-  Bait, Virgin Mobile, agua, SACMEX, gas del hogar, Biogas,
-  Zeta Gas, Gas Natural Fenosa, plomero, electricista, albañil,
-  carpintero, servicio técnico, limpieza, lavandería, tintorería,
-  mensajería, paquetería, FedEx, DHL, Estafeta, J&T,
-  seguro de carro, seguro de gastos médicos, seguro de vida,
-  IMSS, ISSSTE, SAT, impuestos, predial, tenencia
-
-📱 suscripciones:
-  Netflix, Spotify, Disney+, HBO Max, Max, Apple TV+, Amazon Prime,
-  Crunchyroll, Paramount+, Vix, DAZN, YouTube Premium, Twitch,
-  iCloud, Google One, Microsoft 365, Office 365, Adobe Creative Cloud,
-  Canva Pro, ChatGPT Plus, Claude, Notion, Figma, Dropbox,
-  Duolingo Plus, membresía, suscripción mensual, renovación anual,
-  Apple Music, Deezer, Tidal
-
-🏡 hogar:
-  mueble, silla, mesa, sillón, sofá, cama, colchón, almohada,
-  refrigerador, lavadora, secadora, microondas, estufa, horno,
-  licuadora, cafetera, batidora, aspiradora, ventilador, aire acondicionado,
-  televisión, TV, pantalla, bocina, audífonos, auriculares, cables,
-  foco, foquito, lámpara, cortinas, tapete, alfombra, toallas,
-  sábanas, almohada, edredón, cojín, decoración, cuadro, planta,
-  maceta, electrodoméstico, aparato, herramienta, ferretería,
-  Home Depot, Ace Hardware, Truper, arreglo del hogar, plomería,
-  pintura, impermeabilizante, loseta, material de construcción,
-  Amazon (electrónica o hogar), Liverpool, El Palacio de Hierro,
-  IKEA, Coppel (electrónica o muebles)
-
-👕 ropa:
-  ropa, camisa, pantalón, vestido, falda, blusa, playera, sudadera,
-  chamarra, abrigo, zapatos, tenis, botas, sandalias, calcetines,
-  ropa interior, cinturón, bolsa, mochila, cartera, sombrero, gorra,
-  Zara, H&M, Shein, Forever 21, Pull & Bear, Bershka, Stradivarius,
-  Nike, Adidas, Puma, New Balance, Under Armour, C&A, Old Navy,
-  Gap, Liverpool (ropa), Coppel (ropa), Suburbia, accesorios, joyería,
-  pulsera, collar, aretes, anillo, reloj, lentes de sol
-
-🐾 mascotas:
-  veterinario, veterinaria, consulta veterinaria, vacuna para mascota,
-  medicamento para perro, medicamento para gato, antiparasitario,
-  pulguicida, comida para perro, croquetas, alimento para gato,
-  juguete para mascota, collar, correa, cama para mascota,
-  estética canina, baño para perro, guardería de mascotas,
-  Petco, PetSmart, accesorios para mascota
-
-📦 otros:
-  regalo, transferencia, préstamo, ahorro, inversión, donación,
-  hotel, viaje, aeropuerto, pasaje de avión, AICM, NAICM, Volaris,
-  Aeromexico, Viva Aerobus, maleta, equipaje,
-  Amazon (si no es claro qué compró), Mercado Libre,
-  todo lo que no encaje claramente en las otras categorías
+REGLAS DE CLASIFICACIÓN (ejemplos comunes en México):
+🚗 transporte: Uber, Didi, gasolina, camión, metro, casetas.
+🍔 comida: tacos, restaurante, despensa, Walmart, Oxxo, super.
+🏠 renta: renta, hipoteca, mantenimiento.
+🎬 entretenimiento: cine, bar, fiesta, videojuegos, Spotify.
+💊 salud: doctor, farmacia, medicinas, gym.
+📚 educacion: colegiatura, libros, cursos.
+💡 servicios: luz (CFE), agua, internet, plan celular.
+📱 suscripciones: Netflix, Amazon Prime, Disney+.
+🏡 hogar: muebles, reparaciones, Amazon, Liverpool.
+👕 ropa: Zara, tenis, ropa, accesorios.
+🐾 mascotas: veterinario, croquetas.
+📦 otros: regalos, viajes, imprevistos.
 
 ═══════════════════════════════
 PASO 4 — DESCRIPCIÓN
 ═══════════════════════════════
 Escribe una descripción corta y natural en español (máximo 40 caracteres).
 Usa el nombre del lugar o producto mencionado.
-Ejemplos: "Uber al trabajo", "Tacos en el mercado", "Netflix mensual",
-"Despensa Walmart", "Consulta médica", "Gasolina Pemex", "Coca Cola Oxxo"
 
 ═══════════════════════════════
 PASO 5 — FECHA DEL GASTO
 ═══════════════════════════════
-Determina cuándo ocurrió el gasto según lo que dice el usuario.
-Usa las fechas de referencia del inicio de este prompt.
-Devuelve la fecha en formato YYYY-MM-DD.
+Determina cuándo ocurrió el gasto. Devuelve YYYY-MM-DD.
 Si no menciona fecha, usa: ${HOY}
 
 ═══════════════════════════════
 FORMATO DE RESPUESTA
 ═══════════════════════════════
-Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown, sin backticks.
-Si es gasto:    {"monto": 150, "categoria_id": "transporte", "descripcion": "Uber al trabajo", "fecha": "2025-04-13", "es_gasto": true}
-Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha": "${HOY}", "es_gasto": false}`;
+Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown.
+{"monto": 150, "categoria_id": "transporte", "descripcion": "Uber al trabajo", "fecha": "2025-04-13", "es_gasto": true}`;
 
   const response = await fetch(GEMINI_URL, {
     method: 'POST',
@@ -251,7 +168,6 @@ Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha"
   const categoria = CATEGORIAS.find(c => c.id === resultado.categoria_id) || CATEGORIAS[8];
 
   // Validar que la fecha devuelta por Gemini tenga formato correcto
-  // Si no, usar hoy como fallback
   const fechaRegex = /^\d{4}-\d{2}-\d{2}$/;
   const fechaFinal = resultado.fecha && fechaRegex.test(resultado.fecha)
     ? resultado.fecha
@@ -264,6 +180,6 @@ Si no es gasto: {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha"
     monto: String(resultado.monto || 0),
     categoria,
     descripcion: resultado.descripcion || '',
-    fecha: fechaResultado, // ← nuevo campo que antes no existía
+    fecha: fechaResultado,
   };
 }

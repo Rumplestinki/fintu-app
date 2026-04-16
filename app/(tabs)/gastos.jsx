@@ -38,6 +38,17 @@ const NOMBRES_MESES = [
 ];
 
 // ──────────────────────────────────────────
+// Helpers de fecha
+// ──────────────────────────────────────────
+const formatearFechaISO = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// ──────────────────────────────────────────
 // Helper: calcular inicio y fin de un periodo
 // dado el dia_corte del usuario y un offset
 // offset 0 = periodo actual, offset 1 = anterior, etc.
@@ -70,8 +81,7 @@ function calcularRangoPeriodo(diaCorte, offset = 0) {
   // El fin es el día anterior al próximo corte
   const finDate = new Date(anioBase, mesBase - offset + 1, diaCorte - 1);
 
-  const toISO = (d) => d.toISOString().split('T')[0];
-  return { inicio: toISO(inicioDate), fin: toISO(finDate) };
+  return { inicio: formatearFechaISO(inicioDate), fin: formatearFechaISO(finDate) };
 }
 
 // ──────────────────────────────────────────
@@ -131,13 +141,18 @@ function filtrarPorPeriodo(gastos, periodo) {
 // Helpers de fecha para etiquetas en la lista
 // ──────────────────────────────────────────
 function etiquetaDeFecha(fechaISO) {
-  const fecha = new Date(fechaISO);
+  const fecha = new Date(fechaISO + 'T12:00:00');
   const hoy = new Date();
   const ayer = new Date();
   ayer.setDate(ayer.getDate() - 1);
-  const soloFecha = (d) => d.toDateString();
-  if (soloFecha(fecha) === soloFecha(hoy)) return 'Hoy';
-  if (soloFecha(fecha) === soloFecha(ayer)) return 'Ayer';
+  const soloFecha = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  if (fechaISO === soloFecha(hoy)) return 'Hoy';
+  if (fechaISO === soloFecha(ayer)) return 'Ayer';
   return fecha.toLocaleDateString('es-MX', {
     weekday: 'short', day: 'numeric', month: 'short',
   });
@@ -155,8 +170,6 @@ function agruparPorFecha(gastos) {
     data: [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
   }));
 }
-
-const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
 
 const formatearFechaLegible = (fechaISO) => {
   const [año, mes, dia] = fechaISO.split('-');

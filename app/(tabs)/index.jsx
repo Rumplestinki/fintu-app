@@ -35,19 +35,25 @@ const formatMXN = (monto) =>
     minimumFractionDigits: 0,
   }).format(monto || 0);
 
+const formatearFechaISO = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const formatearFechaGasto = (fechaISO) => {
   if (!fechaISO) return '';
   const hoy = new Date();
   const fecha = new Date(fechaISO + 'T12:00:00');
-  const hoyStr = hoy.toISOString().split('T')[0];
-  const ayerStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const hoyStr = formatearFechaISO(hoy);
+  const ayerStr = formatearFechaISO(new Date(Date.now() - 86400000));
   if (fechaISO === hoyStr) return 'Hoy';
   if (fechaISO === ayerStr) return 'Ayer';
   const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return `${fecha.getDate()} ${meses[fecha.getMonth()]}`;
 };
-
-const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
 
 const NOMBRES_MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',

@@ -2,49 +2,46 @@
 import { supabase } from './supabase';
 
 // ──────────────────────────────────────────
+// Helper: obtener fecha ISO local YYYY-MM-DD
+// ──────────────────────────────────────────
+const toLocalISO = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// ──────────────────────────────────────────
 // Helper: calcular rango de fechas según día de corte
 // Dado un día de corte (1-28), devuelve el inicio y fin
 // del periodo "actual" o "anterior"
-//
-// Ejemplo con dia_corte = 15:
-//   Hoy = 20 de abril → periodo actual: 15 abr – 14 may
-//   Hoy = 10 de abril → periodo actual: 15 mar – 14 abr
 // ──────────────────────────────────────────
 export function calcularPeriodo(diaCorte = 1, offset = 0) {
   const hoy = new Date();
   const diaActual = hoy.getDate();
 
-  // Determinar si ya pasamos el día de corte este mes
-  // Si diaActual >= diaCorte → el periodo actual empezó este mes
-  // Si diaActual < diaCorte  → el periodo actual empezó el mes pasado
   let mesInicio, anioInicio;
 
   if (diaActual >= diaCorte) {
-    // Estamos dentro del periodo que empezó este mes
-    mesInicio = hoy.getMonth();      // 0-indexed
+    mesInicio = hoy.getMonth();
     anioInicio = hoy.getFullYear();
   } else {
-    // Aún no llegamos al corte, el periodo empezó el mes pasado
     const fechaPasada = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
     mesInicio = fechaPasada.getMonth();
     anioInicio = fechaPasada.getFullYear();
   }
 
-  // Aplicar offset: -1 = periodo anterior, 0 = actual
   const fechaInicioBase = new Date(anioInicio, mesInicio - offset, diaCorte);
   const fechaFinBase = new Date(anioInicio, mesInicio - offset + 1, diaCorte - 1);
 
-  const toISO = (d) => d.toISOString().split('T')[0];
-
   return {
-    inicio: toISO(fechaInicioBase),
-    fin: toISO(fechaFinBase),
+    inicio: toLocalISO(fechaInicioBase),
+    fin: toLocalISO(fechaFinBase),
   };
 }
 
 // ──────────────────────────────────────────
 // Gastos de un periodo con día de corte
-// Reemplaza a obtenerGastosMes cuando el usuario tiene dia_corte configurado
 // ──────────────────────────────────────────
 export async function obtenerGastosPeriodo(diaCorte = 1, offset = 0) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -73,8 +70,6 @@ export async function obtenerGastosPeriodo(diaCorte = 1, offset = 0) {
 
 // ──────────────────────────────────────────
 // Gastos del mes actual — para el dashboard
-// Mantiene compatibilidad con código existente
-// Acepta diaCorte opcional (default = 1 = comportamiento anterior)
 // ──────────────────────────────────────────
 export async function obtenerGastosMes(mes, anio, diaCorte = 1) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -82,11 +77,10 @@ export async function obtenerGastosMes(mes, anio, diaCorte = 1) {
   let fechaInicio, fechaFin;
 
   if (diaCorte === 1) {
-    // Comportamiento clásico: mes calendario
     fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
-    fechaFin = new Date(anio, mes, 0).toISOString().split('T')[0];
+    fechaFin = new Date(anio, mes, 0);
+    fechaFin = toLocalISO(fechaFin);
   } else {
-    // Usar periodo basado en día de corte
     const { inicio, fin } = calcularPeriodo(diaCorte, 0);
     fechaInicio = inicio;
     fechaFin = fin;
@@ -115,11 +109,12 @@ export async function obtenerGastosMes(mes, anio, diaCorte = 1) {
 
 // ──────────────────────────────────────────
 // Últimos N gastos — para el dashboard
+// Ahora filtra por periodo si se proporcionan fechas
 // ──────────────────────────────────────────
-export async function obtenerUltimosGastos(limite = 5) {
+export async function obtenerUltimosGastos(limite = 5, fechaInicio = null, fechaFin = null) {
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('gastos')
     .select(`
       *,
@@ -130,7 +125,12 @@ export async function obtenerUltimosGastos(limite = 5) {
         color
       )
     `)
-    .eq('user_id', user.id)
+    .eq('user_id', user.id);
+
+  if (fechaInicio) query = query.gte('fecha', fechaInicio);
+  if (fechaFin) query = query.lte('fecha', fechaFin);
+
+  const { data, error } = await query
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(limite);
