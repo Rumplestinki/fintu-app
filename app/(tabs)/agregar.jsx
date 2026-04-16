@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
+import { useAuth } from '../../hooks/useAuth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { verificarPresupuestos } from '../../services/notificaciones';
 
@@ -68,6 +69,7 @@ function Toast({ visible, mensaje, tipo = 'exito' }) {
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
 export default function AgregarGasto() {
+  const { usuario } = useAuth();
   const [monto, setMonto] = useState('');
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [descripcion, setDescripcion] = useState('');
@@ -132,8 +134,9 @@ export default function AgregarGasto() {
     setGuardando(true);
     try {
       await crearGasto({
+        userId: usuario?.id,
         monto: parseFloat(monto),
-        categoria_id: categoriaSeleccionada.dbId,
+        categoriaId: categoriaSeleccionada.dbId,
         descripcion,
         fecha,
         origen: 'manual',
