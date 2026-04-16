@@ -359,7 +359,7 @@ export default function PresupuestoScreen() {
           {/* Barra de progreso debajo de cada categoría con presupuesto */}
           {/* (se renderiza fuera del map para mejor control visual) */}
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: 75 }} />
         </ScrollView>
       )}
 

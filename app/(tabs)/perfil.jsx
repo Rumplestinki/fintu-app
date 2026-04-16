@@ -314,7 +314,7 @@ export default function PerfilScreen() {
             <View style={styles.grupo}>
               <FilaOpcion icono="log-out-outline" label="Cerrar sesión" onPress={handleLogout} peligro />
             </View>
-            <View style={{ height: 60 }} />
+            <View style={{ height: 110 }} />
           </>
         )}
       </ScrollView>
