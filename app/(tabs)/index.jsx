@@ -1,5 +1,5 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — con alertas de presupuesto premium in-app
+// Dashboard principal de Fintú — Registro por voz instantáneo y cálculo de neto real
 
 import { useState, useCallback, useRef } from 'react';
 import {
@@ -103,8 +103,11 @@ export default function Dashboard() {
   const [refrescando, setRefrescando] = useState(false);
   const [presupuestoMes, setPresupuestoMes] = useState(0);
   const [ingresosNetos, setIngresosNetos] = useState(0);
+  
+  // Estados para Modal de Voz
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
+  
   const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
 
   // Alertas de presupuesto
@@ -149,7 +152,6 @@ export default function Dashboard() {
         const frecuencia = perfil?.frecuencia_pago || 'mensual';
         
         const factor = frecuencia === 'quincenal' ? 2 : 1;
-        // Fórmula refinada: (Sueldo - Impuestos - Mi Ahorro + Vales) * frecuencia
         const netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
         
         setIngresosNetos(netoMensual);
@@ -202,7 +204,6 @@ export default function Dashboard() {
   // ── Revisar alertas de presupuesto ──
   const actualizarAlertas = async () => {
     const nuevasAlertas = await verificarPresupuestos();
-    // Filtrar las que el usuario ya cerró en esta sesión
     const visibles = nuevasAlertas.filter(a => !alertasDismissed.current.has(a.id));
     setAlertas(visibles);
   };
@@ -227,7 +228,7 @@ export default function Dashboard() {
     setAlertas(prev => prev.filter(a => a.id !== id));
   };
 
-  // ── Guardar gasto por voz ──
+  // ── Guardar gasto por voz AUTOMÁTICO ──
   const handleResultadoVoz = async (datos) => {
     if (!datos.monto || datos.monto === '0') {
       setModalVozVisible(false);
@@ -237,7 +238,6 @@ export default function Dashboard() {
 
     try {
       setGuardandoVoz(true);
-
       const { data: { user } } = await supabase.auth.getUser();
 
       await registrarGasto({
@@ -252,12 +252,10 @@ export default function Dashboard() {
       setModalVozVisible(false);
       setGuardandoVoz(false);
 
-      // Recargar datos, revisar alertas y mostrar toast
+      // Refrescar y avisar
       cargarDatos();
       actualizarAlertas();
-
-      const desc = datos.descripcion ? ` — ${datos.descripcion}` : '';
-      mostrarToast(`🎙️ $${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${desc}`);
+      mostrarToast(`🎙️ Guardado: $${datos.monto} en ${datos.categoria?.nombre}`);
 
     } catch (error) {
       console.error('Error guardando gasto por voz:', error);
@@ -273,7 +271,6 @@ export default function Dashboard() {
     <View style={estilos.contenedor}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
-      {/* Toast flotante */}
       <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       {/* ── HEADER ── */}
@@ -288,18 +285,13 @@ export default function Dashboard() {
               )}
             </View>
           </View>
-          <TouchableOpacity
-            style={estilos.avatar}
-            onPress={() => router.push('/(tabs)/perfil')}
-          >
+          <TouchableOpacity style={estilos.avatar} onPress={() => router.push('/(tabs)/perfil')}>
             <Text style={estilos.avatarTexto}>{nombreUsuario.charAt(0).toUpperCase()}</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
-        {cargando ? (
-          <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} />
-        ) : (
+        {cargando ? <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} /> : (
           <>
             <Text style={estilos.montoBalance}>{formatMXN(gastadoMes)}</Text>
             <Text style={estilos.subBalance}>de {formatMXN(presupuestoMes)} presupuestados</Text>
@@ -307,147 +299,75 @@ export default function Dashboard() {
         )}
 
         <View style={estilos.barraBg}>
-          <View
-            style={[
-              estilos.barraRelleno,
-              {
-                width: `${Math.min(porcentajeUsado, 100)}%`,
-                backgroundColor:
-                  porcentajeUsado >= 90 ? COLORS.error
-                  : porcentajeUsado >= 70 ? COLORS.warning
-                  : '#ffffff',
-              },
-            ]}
-          />
+          <View style={[estilos.barraRelleno, { width: `${Math.min(porcentajeUsado, 100)}%`, backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff' }]} />
         </View>
         <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
       </View>
 
       {/* ── SCROLL ── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={estilos.scroll}
-        refreshControl={
-          <RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />
-        }
-      >
-        {/* Tarjetas de ingresos y disponible */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={estilos.scroll} refreshControl={<RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />}>
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
               <Text style={estilos.tarjetaMiniLabel}>Ingresos Netos</Text>
-              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>
-                {formatMXN(ingresosNetos)}
-              </Text>
+              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>{formatMXN(ingresosNetos)}</Text>
             </View>
             <View style={estilos.tarjetaMini}>
               <Text style={estilos.tarjetaMiniLabel}>Disponible</Text>
-              <Text style={[
-                estilos.tarjetaMiniMonto,
-                { color: disponible < 0 ? COLORS.error : COLORS.textPrimary }
-              ]}>
-                {formatMXN(disponible)}
-              </Text>
+              <Text style={[estilos.tarjetaMiniMonto, { color: disponible < 0 ? COLORS.error : COLORS.textPrimary }]}>{formatMXN(disponible)}</Text>
             </View>
           </View>
         </View>
 
-        {/* ── ALERTAS DE PRESUPUESTO — aparecen solo si hay categorías en riesgo ── */}
-        {alertas.length > 0 && (
-          <AlertaPresupuesto
-            alertas={alertas}
-            onDismiss={handleDismissAlerta}
-          />
-        )}
+        {alertas.length > 0 && <AlertaPresupuesto alertas={alertas} onDismiss={handleDismissAlerta} />}
 
-        {/* Últimos movimientos */}
         <View style={estilos.seccion}>
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
-              <Text style={estilos.verTodos}>Ver todos</Text>
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}><Text style={estilos.verTodos}>Ver todos</Text></TouchableOpacity>
           </View>
-
-          {cargando ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
-          ) : ultimosGastos.length === 0 ? (
-            <View style={estilos.estadoVacio}>
-              <Text style={estilos.estadoVacioEmoji}>💸</Text>
-              <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
-              <Text style={estilos.estadoVacioSub}>
-                Toca "+ Agregar gasto" para registrar tu primer gasto
-              </Text>
-            </View>
-          ) : (
-            ultimosGastos.map((gasto) => {
-              const categoria = getCategoriaByDbId(gasto.categoria_id);
-              return <GastoItem key={gasto.id} gasto={gasto} categoria={categoria} />;
-            })
+          {cargando ? <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} /> : (
+            ultimosGastos.length === 0 ? (
+              <View style={estilos.estadoVacio}>
+                <Text style={estilos.estadoVacioEmoji}>💸</Text>
+                <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
+              </View>
+            ) : ultimosGastos.map(g => <GastoItem key={g.id} gasto={g} categoria={getCategoriaByDbId(g.categoria_id)} />)
           )}
         </View>
-
-        <View style={{ height: 110 }} />
-      </ScrollView>
-
+        <View style={{ height: 180 }} />
+        </ScrollView>
       {/* ── BOTONES FLOTANTES ── */}
-      <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 16 }]}>
-        <TouchableOpacity
-          style={estilos.botonAgregar}
-          onPress={() => router.push('/(tabs)/agregar')}
-          activeOpacity={0.85}
-        >
+      <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
+        <TouchableOpacity style={estilos.botonAgregar} onPress={() => router.push('/(tabs)/agregar')}>
           <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.btnVozFlotante}
-          onPress={() => setModalVozVisible(true)}
-          activeOpacity={0.85}
-        >
+        <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => setModalVozVisible(true)}>
           <Text style={estilos.btnVozEmoji}>🎙️</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── MODAL DE VOZ ── */}
-      <Modal
-        visible={modalVozVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}
-      >
+      {/* ── MODAL DE VOZ AUTOMÁTICO ── */}
+      <Modal visible={modalVozVisible} transparent animationType="slide" onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}>
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalContenido}>
             <View style={estilos.modalHandle} />
             <Text style={estilos.modalTitulo}>Registrar por voz</Text>
-            <Text style={estilos.modalSubtitulo}>
-              Di algo como: "gasté 150 pesos en tacos"
-            </Text>
-
+            <Text style={estilos.modalSubtitulo}>"Gasté 150 pesos en tacos hoy"</Text>
+            
             <View style={estilos.modalBotonVoz}>
               {guardandoVoz ? (
-                <View style={estilos.guardandoContenedor}>
+                <View style={{ alignItems: 'center', gap: 12 }}>
                   <ActivityIndicator size="large" color={COLORS.primary} />
-                  <Text style={estilos.guardandoTexto}>Guardando gasto…</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textSecondary }}>Analizando y guardando...</Text>
                 </View>
               ) : (
                 <BotonVoz onResultado={handleResultadoVoz} tamaño="grande" />
               )}
             </View>
 
-            <View style={estilos.ejemplos}>
-              <Text style={estilos.ejemplosTitulo}>Ejemplos:</Text>
-              <Text style={estilos.ejemploTexto}>"Gasté 80 pesos en el Oxxo"</Text>
-              <Text style={estilos.ejemploTexto}>"Ayer pagué 150 de Uber"</Text>
-              <Text style={estilos.ejemploTexto}>"El 10 gasté 500 en el super"</Text>
-              <Text style={estilos.ejemploTexto}>"Compré tenis Nike el martes en 1200"</Text>
-            </View>
-
             {!guardandoVoz && (
-              <TouchableOpacity
-                style={estilos.btnCancelarModal}
-                onPress={() => setModalVozVisible(false)}
-              >
+              <TouchableOpacity style={estilos.btnCancelarModal} onPress={() => setModalVozVisible(false)}>
                 <Text style={estilos.btnCancelarTexto}>Cancelar</Text>
               </TouchableOpacity>
             )}
@@ -458,17 +378,12 @@ export default function Dashboard() {
   );
 }
 
-// ─── Componente fila de gasto ──────────────────────────────
 function GastoItem({ gasto, categoria }) {
   return (
     <View style={estilos.gastoItem}>
-      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}>
-        <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
-      </View>
+      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}><Text style={estilos.gastoEmoji}>{categoria.icono}</Text></View>
       <View style={estilos.gastoInfo}>
-        <Text style={estilos.gastoDescripcion} numberOfLines={1}>
-          {gasto.descripcion || categoria.nombre}
-        </Text>
+        <Text style={estilos.gastoDescripcion} numberOfLines={1}>{gasto.descripcion || categoria.nombre}</Text>
         <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
       </View>
       <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
@@ -476,119 +391,54 @@ function GastoItem({ gasto, categoria }) {
   );
 }
 
-// ─── ESTILOS ──────────────────────────────────────────────
 const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
-
-  toast: {
-    position: 'absolute',
-    top: 60, left: 16, right: 16,
-    flexDirection: 'row', alignItems: 'center',
-    gap: 10, paddingVertical: 14, paddingHorizontal: 18,
-    borderRadius: 14, zIndex: 999,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 10,
-  },
-  toastExito: { backgroundColor: '#1A2A1A', borderWidth: 1, borderColor: COLORS.success },
-  toastError: { backgroundColor: '#2A1A1A', borderWidth: 1, borderColor: COLORS.error },
-  toastEmoji: { fontSize: 18 },
+  toast: { position: 'absolute', top: 60, left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 18, borderRadius: 14, zIndex: 999, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10, backgroundColor: '#1A2A1A', borderWidth: 1, borderColor: COLORS.success },
   toastTexto: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
-
   header: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingBottom: 28 },
-  headerTop: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'flex-start', marginBottom: 20,
-  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
   periodoContenedor: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
   rangoPeriodo: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '500', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  avatar: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   avatarTexto: { fontSize: 16, fontWeight: '600', color: '#fff' },
   etiquetaBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
   montoBalance: { fontSize: 34, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
   subBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  barraBg: {
-    marginTop: 14, height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3, overflow: 'hidden',
-  },
+  barraBg: { marginTop: 14, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden' },
   barraRelleno: { height: '100%', borderRadius: 3 },
   porcentajeTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'right' },
-
   seccion: { paddingHorizontal: 16, marginTop: 16 },
-  seccionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 12,
-  },
+  seccionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   seccionTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
   verTodos: { fontSize: 12, color: COLORS.primary },
-
   tarjetasGrid: { flexDirection: 'row', gap: 10 },
   tarjetaMini: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 14 },
   tarjetaMiniLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
   tarjetaMiniMonto: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
-
-  gastoItem: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surface, borderRadius: 12,
-    padding: 12, marginBottom: 8, gap: 12,
-  },
+  gastoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, marginBottom: 8, gap: 12 },
   gastoIcono: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   gastoEmoji: { fontSize: 18 },
   gastoInfo: { flex: 1 },
   gastoDescripcion: { fontSize: 13, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 2 },
   gastoFecha: { fontSize: 11, color: COLORS.textSecondary },
   gastoMonto: { fontSize: 13, fontWeight: '600', color: COLORS.error },
-
   estadoVacio: { alignItems: 'center', paddingVertical: 40 },
   estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
   estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
-  estadoVacioSub: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', paddingHorizontal: 20 },
-
-  botonesFlotantes: {
-    position: 'absolute', left: 16, right: 16,
-    flexDirection: 'row', gap: 12, alignItems: 'center',
-  },
-  botonAgregar: {
-    flex: 1, backgroundColor: COLORS.primary,
-    borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
-  },
+  botonesFlotantes: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 12, alignItems: 'center' },
+  botonAgregar: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  btnVozFlotante: {
-    width: 54, height: 54, borderRadius: 27,
-    backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: COLORS.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
-  },
+  btnVozFlotante: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 },
   btnVozEmoji: { fontSize: 24 },
-
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContenido: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 48, alignItems: 'center',
-  },
+  modalContenido: { backgroundColor: COLORS.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 48, alignItems: 'center' },
   modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
   modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },
-  modalBotonVoz: { marginBottom: 28, alignItems: 'center' },
-  guardandoContenedor: { alignItems: 'center', gap: 12 },
-  guardandoTexto: { fontSize: 14, color: COLORS.textSecondary },
-  ejemplos: {
-    width: '100%', backgroundColor: COLORS.surfaceLight,
-    borderRadius: 12, padding: 14, marginBottom: 16, gap: 4,
-  },
-  ejemplosTitulo: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 4 },
-  ejemploTexto: { fontSize: 13, color: COLORS.textPrimary, fontStyle: 'italic' },
+  modalBotonVoz: { marginBottom: 20, alignItems: 'center' },
   btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
   btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });

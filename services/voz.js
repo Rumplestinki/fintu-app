@@ -132,7 +132,14 @@ Si no menciona fecha, usa: ${HOY}
 FORMATO DE RESPUESTA
 ═══════════════════════════════
 Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown.
-{"monto": 150, "categoria_id": "transporte", "descripcion": "Uber al trabajo", "fecha": "2025-04-13", "es_gasto": true}`;
+{
+  "monto": 150,
+  "categoria_id": "transporte",
+  "descripcion": "Uber al trabajo",
+  "fecha": "2025-04-13",
+  "transcripcion": "el texto completo que escuchaste",
+  "es_gasto": true
+}`;
 
   const response = await fetch(GEMINI_URL, {
     method: 'POST',
@@ -181,5 +188,6 @@ Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown.
     categoria,
     descripcion: resultado.descripcion || '',
     fecha: fechaResultado,
+    transcripcion: resultado.transcripcion || '',
   };
 }
