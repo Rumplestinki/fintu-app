@@ -20,6 +20,7 @@ import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { verificarPresupuestos } from '../../services/notificaciones';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -137,6 +138,8 @@ export default function AgregarGasto() {
         fecha,
         origen: 'manual',
       });
+
+      verificarPresupuestos();
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);

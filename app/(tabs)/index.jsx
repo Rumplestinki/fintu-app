@@ -1,5 +1,5 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — con botón de voz y toast de confirmación
+// Dashboard principal de Fintú — con alertas de presupuesto premium in-app
 
 import { useState, useCallback, useRef } from 'react';
 import {
@@ -23,6 +23,8 @@ import { obtenerPresupuestosMes } from '../../services/presupuestos';
 import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import BotonVoz from '../../components/BotonVoz';
+import AlertaPresupuesto from '../../components/AlertaPresupuesto';
+import { verificarPresupuestos } from '../../services/notificaciones';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -48,6 +50,8 @@ const formatearFechaGasto = (fechaISO) => {
 const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
 
 // ─── COMPONENTE TOAST ─────────────────────────────────────
+import React from 'react';
+
 function Toast({ visible, mensaje, tipo = 'exito' }) {
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -76,7 +80,6 @@ function Toast({ visible, mensaje, tipo = 'exito' }) {
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
-import React from 'react';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -92,7 +95,11 @@ export default function Dashboard() {
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
 
-  // Estado del toast
+  // Alertas de presupuesto
+  const [alertas, setAlertas] = useState([]);
+  const alertasDismissed = useRef(new Set());
+
+  // Toast
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastTipo, setToastTipo] = useState('exito');
@@ -138,19 +145,35 @@ export default function Dashboard() {
     }
   };
 
+  // ── Revisar alertas de presupuesto ──
+  const actualizarAlertas = async () => {
+    const nuevasAlertas = await verificarPresupuestos();
+    // Filtrar las que el usuario ya cerró en esta sesión
+    const visibles = nuevasAlertas.filter(a => !alertasDismissed.current.has(a.id));
+    setAlertas(visibles);
+  };
+
   useFocusEffect(
     useCallback(() => {
       setCargando(true);
       cargarDatos();
+      actualizarAlertas();
     }, [])
   );
 
   const onRefresh = () => {
     setRefrescando(true);
     cargarDatos();
+    actualizarAlertas();
   };
 
-  // ── Guardar gasto detectado por voz ──
+  // Cerrar una alerta (persiste solo durante la sesión)
+  const handleDismissAlerta = (id) => {
+    alertasDismissed.current.add(id);
+    setAlertas(prev => prev.filter(a => a.id !== id));
+  };
+
+  // ── Guardar gasto por voz ──
   const handleResultadoVoz = async (datos) => {
     if (!datos.monto || datos.monto === '0') {
       setModalVozVisible(false);
@@ -159,19 +182,22 @@ export default function Dashboard() {
     }
 
     try {
-        await registrarGasto({
-            monto: parseFloat(datos.monto),
-            categoria_id: datos.categoria?.dbId || 9,
-            descripcion: datos.descripcion || '',
-            fecha: datos.fecha || formatearFechaISO(new Date()),  // ← usa la fecha del audio, hoy como fallback
-            origen: 'voz',
-        });
+      setGuardandoVoz(true);
+      await registrarGasto({
+        monto: parseFloat(datos.monto),
+        categoria_id: datos.categoria?.dbId || 9,
+        descripcion: datos.descripcion || '',
+        fecha: datos.fecha || formatearFechaISO(new Date()),
+        origen: 'voz',
+      });
 
       setModalVozVisible(false);
       setGuardandoVoz(false);
 
-      // Recargar datos y mostrar toast en lugar de Alert
+      // Recargar datos, revisar alertas y mostrar toast
       cargarDatos();
+      actualizarAlertas();
+
       const desc = datos.descripcion ? ` — ${datos.descripcion}` : '';
       mostrarToast(`🎙️ $${datos.monto} en ${datos.categoria?.nombre || 'Otros'}${desc}`);
 
@@ -244,6 +270,7 @@ export default function Dashboard() {
           <RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
+        {/* Tarjetas de ingresos y disponible */}
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
@@ -264,6 +291,15 @@ export default function Dashboard() {
           </View>
         </View>
 
+        {/* ── ALERTAS DE PRESUPUESTO — aparecen solo si hay categorías en riesgo ── */}
+        {alertas.length > 0 && (
+          <AlertaPresupuesto
+            alertas={alertas}
+            onDismiss={handleDismissAlerta}
+          />
+        )}
+
+        {/* Últimos movimientos */}
         <View style={estilos.seccion}>
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
@@ -384,53 +420,24 @@ const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
 
-  // Toast
   toast: {
     position: 'absolute',
-    top: 60,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    zIndex: 999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
+    top: 60, left: 16, right: 16,
+    flexDirection: 'row', alignItems: 'center',
+    gap: 10, paddingVertical: 14, paddingHorizontal: 18,
+    borderRadius: 14, zIndex: 999,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 10,
   },
-  toastExito: {
-    backgroundColor: '#1A2A1A',
-    borderWidth: 1,
-    borderColor: COLORS.success,
-  },
-  toastError: {
-    backgroundColor: '#2A1A1A',
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
+  toastExito: { backgroundColor: '#1A2A1A', borderWidth: 1, borderColor: COLORS.success },
+  toastError: { backgroundColor: '#2A1A1A', borderWidth: 1, borderColor: COLORS.error },
   toastEmoji: { fontSize: 18 },
-  toastTexto: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '500',
-    flex: 1,
-  },
+  toastTexto: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
 
-  header: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-  },
+  header: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingBottom: 28 },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'flex-start', marginBottom: 20,
   },
   saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
   fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
@@ -482,62 +489,43 @@ const estilos = StyleSheet.create({
   estadoVacioSub: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', paddingHorizontal: 20 },
 
   botonesFlotantes: {
-    position: 'absolute',
-    left: 16, right: 16,
-    flexDirection: 'row',
-    gap: 12, alignItems: 'center',
+    position: 'absolute', left: 16, right: 16,
+    flexDirection: 'row', gap: 12, alignItems: 'center',
   },
   botonAgregar: {
-    flex: 1,
-    backgroundColor: COLORS.primary,
-    borderRadius: 16, paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
+    flex: 1, backgroundColor: COLORS.primary,
+    borderRadius: 16, paddingVertical: 16, alignItems: 'center',
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
   botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
   btnVozFlotante: {
     width: 54, height: 54, borderRadius: 27,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
   },
   btnVozEmoji: { fontSize: 24 },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContenido: {
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 48,
-    alignItems: 'center',
+    padding: 24, paddingBottom: 48, alignItems: 'center',
   },
-  modalHandle: {
-    width: 40, height: 4,
-    backgroundColor: COLORS.border,
-    borderRadius: 2, marginBottom: 16,
-  },
+  modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
   modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },
   modalBotonVoz: { marginBottom: 28, alignItems: 'center' },
   guardandoContenedor: { alignItems: 'center', gap: 12 },
   guardandoTexto: { fontSize: 14, color: COLORS.textSecondary },
   ejemplos: {
-    width: '100%',
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: 12, padding: 14,
-    marginBottom: 16, gap: 4,
+    width: '100%', backgroundColor: COLORS.surfaceLight,
+    borderRadius: 12, padding: 14, marginBottom: 16, gap: 4,
   },
   ejemplosTitulo: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 4 },
   ejemploTexto: { fontSize: 13, color: COLORS.textPrimary, fontStyle: 'italic' },
   btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
   btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });
-

@@ -1,4 +1,6 @@
-// Layout raíz de la app — decide si mostrar onboarding, login o la app principal
+// app/_layout.jsx
+// Layout raíz — decide si mostrar onboarding, login o la app principal
+
 import { useEffect, useState, useCallback } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -14,7 +16,6 @@ export default function RootLayout() {
   const [sesion, setSesion] = useState(null);
   const [onboardingVisto, setOnboardingVisto] = useState(false);
 
-  // Función para releer AsyncStorage — se llama al montar y cuando cambian segments
   const verificarEstado = useCallback(async () => {
     try {
       const visto = await AsyncStorage.getItem("onboarding_visto");
@@ -24,58 +25,49 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Inicialización: sesión + onboarding
   useEffect(() => {
     const inicializar = async () => {
-    try {
+      try {
         await verificarEstado();
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
-        // Token inválido — limpiar y mandar a login
-        await supabase.auth.signOut();
-        setSesion(null);
+          await supabase.auth.signOut();
+          setSesion(null);
         } else {
-        setSesion(session);
+          setSesion(session);
         }
-    } catch (error) {
+      } catch (error) {
         console.error("Error inicializando app:", error);
         setSesion(null);
-    } finally {
+      } finally {
         setCargando(false);
-    }
+      }
     };
 
     inicializar();
 
-    // Escuchar cambios de sesión (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-        // Si el refresh token expiró, cerramos sesión limpiamente
+      (event, session) => {
         if (event === 'TOKEN_REFRESHED' && !session) {
-        supabase.auth.signOut();
-        setSesion(null);
-        return;
+          supabase.auth.signOut();
+          setSesion(null);
+          return;
         }
         if (event === 'SIGNED_OUT') {
-        setSesion(null);
-        return;
+          setSesion(null);
+          return;
         }
         setSesion(session);
-    }
+      }
     );
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Releer AsyncStorage cada vez que cambia la ruta activa
-  // Esto detecta cuando el onboarding escribe "onboarding_visto" y navega
   useEffect(() => {
-    if (!cargando) {
-      verificarEstado();
-    }
+    if (!cargando) verificarEstado();
   }, [segments]);
 
-  // Redirigir según el estado
   useEffect(() => {
     if (cargando) return;
 
