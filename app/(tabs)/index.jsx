@@ -1,7 +1,7 @@
 // app/(tabs)/index.jsx
 // Dashboard principal de Fintú — Registro por voz instantáneo y cálculo de neto real
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Modal,
   Animated,
+  Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -61,6 +62,37 @@ const NOMBRES_MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
+// ─── HOOK DE ANIMACIÓN DE CONTADOR ─────────────────────────
+
+function useContadorAnimado(valorFinal, duracion, delay) {
+  const [conteo, setConteo] = useState(0);
+  const animValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Resetear valor al inicio cada vez que el valor final cambie
+    animValue.setValue(0);
+    setConteo(0);
+
+    const idListener = animValue.addListener(({ value }) => {
+      setConteo(Math.round(value));
+    });
+
+    Animated.timing(animValue, {
+      toValue: valorFinal,
+      duration: duracion,
+      delay: delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false, // Necesario false para usar el listener y actualizar estado
+    }).start();
+
+    return () => {
+      animValue.removeListener(idListener);
+    };
+  }, [valorFinal]);
+
+  return conteo;
+}
+
 // ─── COMPONENTE TOAST ─────────────────────────────────────
 import React from 'react';
 
@@ -105,6 +137,20 @@ export default function Dashboard() {
   const [presupuestoMes, setPresupuestoMes] = useState(0);
   const [ingresosNetos, setIngresosNetos] = useState(0);
   
+  // Estados para disparar animaciones
+  const [gastadoAnimado, setGastadoAnimado] = useState(0);
+  const [ingresosAnimado, setIngresosAnimado] = useState(0);
+  
+  // Valores animados de UI
+  const opacityAnim = useRef(new Animated.Value(0.75)).current;
+  const barraAnim = useRef(new Animated.Value(0)).current;
+
+  // Hooks de contador animado
+  const gastoContado = useContadorAnimado(gastadoAnimado, 1000, 0);
+  const ingresosContado = useContadorAnimado(ingresosAnimado, 900, 120);
+  const disponibleCalc = ingresosAnimado - gastadoAnimado;
+  const disponibleContado = useContadorAnimado(disponibleCalc, 900, 240);
+
   // Estados para Modal de Voz
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
@@ -134,6 +180,9 @@ export default function Dashboard() {
  
       // Leer perfil
       let diaCorte = 1;
+      let netoMensual = 0;
+      let totalMes = 0;
+
       if (user) {
         const { data: perfil } = await supabase
           .from('users')
@@ -153,7 +202,7 @@ export default function Dashboard() {
         const frecuencia = perfil?.frecuencia_pago || 'mensual';
         
         const factor = frecuencia === 'quincenal' ? 2 : 1;
-        const netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
+        netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
         
         setIngresosNetos(netoMensual);
         diaCorte = perfil?.dia_corte || 1;
@@ -180,7 +229,7 @@ export default function Dashboard() {
  
       // Obtener gastos del periodo
       const gastosDelMes = await obtenerGastosMes(budgetMonth, budgetYear, diaCorte);
-      const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
+      totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
  
       // Filtrar los últimos 5 gastos pero DENTRO del periodo actual
@@ -193,14 +242,53 @@ export default function Dashboard() {
         (sum, p) => sum + parseFloat(p.limite), 0
       );
       setPresupuestoMes(totalPresupuestado);
+
+      // ── Disparar animaciones ──
+      setCargando(false);
+      setRefrescando(false);
+      
+      // Seteamos los valores que los hooks de animación observan
+      setGastadoAnimado(totalMes);
+      setIngresosAnimado(netoMensual);
  
     } catch (error) {
       console.error('Error cargando dashboard:', error);
-    } finally {
       setCargando(false);
       setRefrescando(false);
     }
   };
+
+  // Efecto secundario para disparar opacidad, barra y haptic
+  useEffect(() => {
+    if (!cargando && gastadoAnimado >= 0) {
+      const porcentaje = presupuestoMes > 0 ? Math.round((gastadoAnimado / presupuestoMes) * 100) : 0;
+
+      // 1. Reiniciar y animar opacidad del número principal
+      opacityAnim.setValue(0.75);
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 400,
+        delay: 1000,
+        useNativeDriver: true,
+      }).start();
+
+      // 2. Reiniciar y animar barra de presupuesto
+      barraAnim.setValue(0);
+      Animated.timing(barraAnim, {
+        toValue: Math.min(porcentaje, 100),
+        duration: 800,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false, // false porque anima ancho en porcentaje
+      }).start();
+
+      // 3. Feedback háptico al terminar
+      const timer = setTimeout(() => {
+        hap.suave();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [gastadoAnimado, presupuestoMes, cargando]);
 
   // ── Revisar alertas de presupuesto ──
   const actualizarAlertas = async () => {
@@ -267,7 +355,6 @@ export default function Dashboard() {
   };
 
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
-  const disponible = ingresosNetos - gastadoMes;
 
   return (
     <View style={estilos.contenedor}>
@@ -295,13 +382,24 @@ export default function Dashboard() {
         <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
         {cargando ? <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} /> : (
           <>
-            <Text style={estilos.montoBalance}>{formatMXN(gastadoMes)}</Text>
+            <Animated.Text style={[estilos.montoBalance, { opacity: opacityAnim }]}>
+              {formatMXN(gastoContado)}
+            </Animated.Text>
             <Text style={estilos.subBalance}>de {formatMXN(presupuestoMes)} presupuestados</Text>
           </>
         )}
 
         <View style={estilos.barraBg}>
-          <View style={[estilos.barraRelleno, { width: `${Math.min(porcentajeUsado, 100)}%`, backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff' }]} />
+          <Animated.View style={[
+            estilos.barraRelleno, 
+            { 
+              width: barraAnim.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%']
+              }),
+              backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff' 
+            }
+          ]} />
         </View>
         <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
       </View>
@@ -312,11 +410,18 @@ export default function Dashboard() {
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
               <Text style={estilos.tarjetaMiniLabel}>Ingresos Netos</Text>
-              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>{formatMXN(ingresosNetos)}</Text>
+              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>
+                {cargando ? '$---' : formatMXN(ingresosContado)}
+              </Text>
             </View>
             <View style={estilos.tarjetaMini}>
               <Text style={estilos.tarjetaMiniLabel}>Disponible</Text>
-              <Text style={[estilos.tarjetaMiniMonto, { color: disponible < 0 ? COLORS.error : COLORS.textPrimary }]}>{formatMXN(disponible)}</Text>
+              <Text style={[
+                estilos.tarjetaMiniMonto, 
+                { color: disponibleCalc < 0 ? COLORS.error : COLORS.textPrimary }
+              ]}>
+                {cargando ? '$---' : formatMXN(disponibleContado)}
+              </Text>
             </View>
           </View>
         </View>
