@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
@@ -217,6 +218,7 @@ export default function Dashboard() {
   );
 
   const onRefresh = () => {
+    hap.suave();
     setRefrescando(true);
     cargarDatos();
     actualizarAlertas();
@@ -339,10 +341,10 @@ export default function Dashboard() {
         </ScrollView>
       {/* ── BOTONES FLOTANTES ── */}
       <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
-        <TouchableOpacity style={estilos.botonAgregar} onPress={() => router.push('/(tabs)/agregar')}>
+        <TouchableOpacity style={estilos.botonAgregar} onPress={() => { hap.suave(); router.push('/(tabs)/agregar'); }}>
           <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => setModalVozVisible(true)}>
+        <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => { hap.guardar(); setModalVozVisible(true); }}>
           <Text style={estilos.btnVozEmoji}>🎙️</Text>
         </TouchableOpacity>
       </View>
@@ -380,14 +382,18 @@ export default function Dashboard() {
 
 function GastoItem({ gasto, categoria }) {
   return (
-    <View style={estilos.gastoItem}>
+    <TouchableOpacity 
+      style={estilos.gastoItem} 
+      onPress={() => hap.suave()} 
+      activeOpacity={0.7}
+    >
       <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}><Text style={estilos.gastoEmoji}>{categoria.icono}</Text></View>
       <View style={estilos.gastoInfo}>
         <Text style={estilos.gastoDescripcion} numberOfLines={1}>{gasto.descripcion || categoria.nombre}</Text>
         <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
       </View>
       <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 

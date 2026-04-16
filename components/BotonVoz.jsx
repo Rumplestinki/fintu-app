@@ -7,7 +7,7 @@ import {
   View, Text, StyleSheet, Pressable,
   Animated, ActivityIndicator, Alert,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { hap } from '../services/haptics';
 import { AudioModule, RecordingPresets } from 'expo-audio';
 import { COLORS } from '../constants/colors';
 import { procesarAudioConGemini } from '../services/voz';
@@ -80,7 +80,7 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
     }
 
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      hap.guardar();
 
       const recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
 
@@ -116,7 +116,7 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
     if (estado !== 'grabando' || !recorderRef.current) return;
 
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      hap.suave();
       setEstado('procesando');
       setVolumen(0);
 
@@ -226,4 +226,3 @@ const estilos = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

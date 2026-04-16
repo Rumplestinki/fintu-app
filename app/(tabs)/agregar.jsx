@@ -15,7 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { registrarGasto as crearGasto } from '../../services/gastos';
@@ -104,7 +104,7 @@ export default function AgregarGasto() {
 
   // ── Teclado numérico ──
   const handleTecla = (tecla) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hap.suave();
     if (tecla === '⌫') {
       setMonto((prev) => prev.slice(0, -1));
       return;
@@ -117,19 +117,21 @@ export default function AgregarGasto() {
 
   // ── Seleccionar categoría ──
   const handleCategoria = (cat) => {
-    Haptics.selectionAsync();
+    hap.suave();
     setCategoriaSeleccionada(cat);
   };
 
   // ── Guardar gasto ──
   const handleGuardar = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    hap.guardar();
 
     if (!monto || parseFloat(monto) === 0) {
+      hap.error();
       mostrarToast('Escribe el monto primero', 'error');
       return;
     }
     if (!categoriaSeleccionada) {
+      hap.error();
       mostrarToast('Elige una categoría', 'error');
       return;
     }
@@ -147,7 +149,7 @@ export default function AgregarGasto() {
 
       verificarPresupuestos();
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hap.logro();
       mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
 
       setTimeout(() => {
@@ -263,7 +265,7 @@ export default function AgregarGasto() {
                 fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaBtnActivo,
               ]}
               onPress={() => {
-                Haptics.selectionAsync();
+                hap.suave();
                 setFecha(formatearFechaISO(new Date(Date.now() - 86400000)));
               }}
             >
@@ -276,7 +278,7 @@ export default function AgregarGasto() {
                 fecha === formatearFechaISO(new Date()) && estilos.fechaBtnActivo,
               ]}
               onPress={() => {
-                Haptics.selectionAsync();
+                hap.suave();
                 setFecha(formatearFechaISO(new Date()));
               }}
             >
@@ -291,7 +293,7 @@ export default function AgregarGasto() {
                 estilos.fechaBtnActivo,
               ]}
               onPress={() => {
-                Haptics.selectionAsync();
+                hap.suave();
                 setMostrarPicker(true);
               }}
             >
@@ -312,7 +314,7 @@ export default function AgregarGasto() {
                 if (evento.type === 'dismissed') return;
                 if (fechaSeleccionada) {
                   setFecha(formatearFechaISO(fechaSeleccionada));
-                  Haptics.selectionAsync();
+                  hap.suave();
                 }
               }}
             />
@@ -581,8 +583,7 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOpacity: 0.4, shadowRadius: 12,
     elevation: 8,
   },
   btnGuardarDeshabilitado: {
