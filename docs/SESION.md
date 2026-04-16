@@ -9,6 +9,7 @@ Pulido de UI/UX y animaciones premium en toda la app.
 - ✅ Contador de dinero animado en el Dashboard
 - ✅ Spring animations en selección de categorías y tarjetas de gasto
 - ✅ Espaciado inferior corregido en `perfil.jsx` y `presupuesto.jsx`
+- ✅ **Cierre Premium de Alertas**: Implementación de animación de salida en 3 capas (fade + elevación + colapso de layout con `maxHeight`) para evitar saltos bruscos al cerrar alertas de presupuesto.
 
 ## Archivos modificados en esta sesión
 - `app/_layout.jsx` — nueva TabBar personalizada
