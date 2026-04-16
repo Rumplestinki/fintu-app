@@ -9,10 +9,11 @@ import {
   StyleSheet,
   Animated,
   Pressable,
+  Easing,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../constants/colors';
+import { hap } from '../services/haptics';
 
 // ──────────────────────────────────────────
 // Barra de progreso animada
@@ -48,11 +49,25 @@ function BarraProgreso({ porcentaje, color }) {
 
 // ──────────────────────────────────────────
 // Tarjeta individual de alerta
+// La clave del cierre suave: animar maxHeight a 0 con overflow hidden.
+// Esto hace que el layout colapse gradualmente y las tarjetas de abajo
+// suban junto con el colapso, sin saltar bruscamente.
 // ──────────────────────────────────────────
 function TarjetaAlerta({ alerta, onDismiss, index }) {
   const router = useRouter();
-  const slideAnim = useRef(new Animated.Value(-20)).current;
+
+  // Animaciones de entrada
+  const slideAnim   = useRef(new Animated.Value(-20)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  // Animaciones de salida del contenido (GPU — suave)
+  const exitOpacity    = useRef(new Animated.Value(1)).current;
+  const exitTranslateY = useRef(new Animated.Value(0)).current;
+
+  // Animaciones de colapso del layout (JS thread — necesario para maxHeight/margin)
+  // maxHeight empieza en 300 (más que suficiente para cualquier tarjeta)
+  const maxHeightAnim = useRef(new Animated.Value(300)).current;
+  const marginAnim    = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
     // Entrada escalonada según el índice
@@ -71,75 +86,134 @@ function TarjetaAlerta({ alerta, onDismiss, index }) {
       }),
     ]).start();
 
-    // Haptic al aparecer según severidad
+    // Haptic al aparecer según severidad (solo para la primera alerta)
     if (index === 0) {
       if (alerta.tipo === 'error') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        hap.advertencia();
       } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        hap.suave();
       }
     }
   }, []);
+
+  // Cierre en 3 capas simultáneas:
+  // 1. Fade + subida leve del contenido visible (GPU)
+  // 2. maxHeight 300 → 0 con overflow:hidden (colapsa el espacio del layout)
+  // 3. marginBottom 10 → 0 (elimina el margen residual)
+  // Las tarjetas de abajo suben suavemente junto con el colapso — sin salto
+  const handleDismiss = () => {
+    hap.suave();
+
+    Animated.parallel([
+      // Contenido se desvanece y sube ligeramente
+      Animated.timing(exitOpacity, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(exitTranslateY, {
+        toValue: -6,
+        duration: 200,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+      // El contenedor colapsa — arrastra las tarjetas de abajo suavemente
+      // Dura un poco más que el fade para que el colapso sea el movimiento dominante
+      Animated.timing(maxHeightAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }),
+      // El margen también colapsa para no dejar hueco residual
+      Animated.timing(marginAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false,
+      }),
+    ]).start(() => {
+      // Solo al terminar todo, el padre desmonta el componente
+      onDismiss(alerta.id);
+    });
+  };
 
   const colorBorde = alerta.tipo === 'error' ? COLORS.error : COLORS.warning;
   const colorFondo = alerta.tipo === 'error' ? '#2A1515' : '#2A2010';
   const colorTexto = alerta.tipo === 'error' ? COLORS.error : COLORS.warning;
 
   return (
+    // overflow: hidden + maxHeight animado = las tarjetas de abajo suben
+    // suavemente junto con el colapso, sin ningún salto brusco
     <Animated.View
-      style={[
-        estilos.tarjeta,
-        {
-          borderLeftColor: colorBorde,
-          backgroundColor: colorFondo,
-          transform: [{ translateY: slideAnim }],
-          opacity: opacityAnim,
-        },
-      ]}
+      style={{
+        maxHeight: maxHeightAnim,
+        marginBottom: marginAnim,
+        overflow: 'hidden',
+      }}
     >
-      {/* Encabezado */}
-      <View style={estilos.tarjetaHeader}>
-        <View style={estilos.tarjetaLeft}>
-          <View style={[estilos.iconoCirculo, { backgroundColor: colorBorde + '25' }]}>
-            <Text style={estilos.iconoEmoji}>{alerta.icono}</Text>
+      {/* Tarjeta con animación de entrada */}
+      <Animated.View
+        style={[
+          estilos.tarjeta,
+          {
+            borderLeftColor: colorBorde,
+            backgroundColor: colorFondo,
+            transform: [
+              { translateY: slideAnim },
+              { translateY: exitTranslateY },
+            ],
+            opacity: opacityAnim,
+          },
+        ]}
+      >
+        {/* Capa de fade de salida sobre el contenido */}
+        <Animated.View style={{ opacity: exitOpacity }}>
+
+          {/* Encabezado */}
+          <View style={estilos.tarjetaHeader}>
+            <View style={estilos.tarjetaLeft}>
+              <View style={[estilos.iconoCirculo, { backgroundColor: colorBorde + '25' }]}>
+                <Text style={estilos.iconoEmoji}>{alerta.icono}</Text>
+              </View>
+              <View style={estilos.tarjetaTextos}>
+                <Text style={[estilos.tarjetaTitulo, { color: colorTexto }]}>
+                  {alerta.titulo}
+                </Text>
+                <Text style={estilos.tarjetaNombre}>{alerta.nombre}</Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={handleDismiss}
+              style={estilos.btnCerrar}
+              hitSlop={8}
+            >
+              <Text style={estilos.btnCerrarTxt}>✕</Text>
+            </Pressable>
           </View>
-          <View style={estilos.tarjetaTextos}>
-            <Text style={[estilos.tarjetaTitulo, { color: colorTexto }]}>
-              {alerta.titulo}
-            </Text>
-            <Text style={estilos.tarjetaNombre}>{alerta.nombre}</Text>
+
+          {/* Barra de progreso */}
+          <BarraProgreso porcentaje={alerta.porcentaje} color={colorBorde} />
+
+          {/* Detalle */}
+          <View style={estilos.tarjetaDetalle}>
+            <Text style={estilos.tarjetaMensaje}>{alerta.mensaje}</Text>
+            <Pressable
+              onPress={() => {
+                hap.suave();
+                router.push('/(tabs)/presupuesto');
+              }}
+            >
+              <Text style={[estilos.verPresupuesto, { color: colorTexto }]}>
+                Ver presupuesto →
+              </Text>
+            </Pressable>
           </View>
-        </View>
 
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onDismiss(alerta.id);
-          }}
-          style={estilos.btnCerrar}
-          hitSlop={8}
-        >
-          <Text style={estilos.btnCerrarTxt}>✕</Text>
-        </Pressable>
-      </View>
-
-      {/* Barra de progreso */}
-      <BarraProgreso porcentaje={alerta.porcentaje} color={colorBorde} />
-
-      {/* Detalle */}
-      <View style={estilos.tarjetaDetalle}>
-        <Text style={estilos.tarjetaMensaje}>{alerta.mensaje}</Text>
-        <Pressable
-          onPress={() => {
-            Haptics.selectionAsync();
-            router.push('/(tabs)/presupuesto');
-          }}
-        >
-          <Text style={[estilos.verPresupuesto, { color: colorTexto }]}>
-            Ver presupuesto →
-          </Text>
-        </Pressable>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -199,11 +273,11 @@ const estilos = StyleSheet.create({
     borderRadius: 10,
   },
 
+  // marginBottom removido de aquí — lo controla marginAnim en el wrapper
   tarjeta: {
     borderRadius: 14,
     borderLeftWidth: 3,
     padding: 14,
-    marginBottom: 10,
   },
 
   tarjetaHeader: {

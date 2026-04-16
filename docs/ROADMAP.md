@@ -47,6 +47,10 @@
 - [✅] Selector de fecha con fechas anteriores
 - [✅] Pantalla de onboarding (3 pasos)
 - [✅] Build de prueba en dispositivo físico
+- [✅] Rediseño Premium de TabBar con animaciones y haptics
+- [✅] Centralización de servicio de Haptics (Feedback táctil en toda la app)
+- [✅] Animaciones de entrada en categorías y tarjetas de gasto
+- [✅] Contador animado en Dashboard (monto total)
 - [ ] Conexión LM Studio Mac-Windows probada
 
 ### FASE 2 — IA
@@ -67,17 +71,26 @@
 - ✅ Bug 10: Gastos mismo día ordenados por created_at DESC
 - ✅ UX 21: Refresh token expirado manejado limpiamente en _layout.jsx
 - ✅ UX 6: Filtro de meses y años pasados en el historial (Implementado con selector de año y cuadrícula de meses)
+- ✅ UX 7: Solapamiento de TabBar en pantallas de Perfil y Presupuesto — Añadido espaciador inferior dinámico
 
 ---
 
 ## BITÁCORA DE SESIONES
 
-### Sesión 15-Abr-2026 (Actual)
+### Sesión 16-Abr-2026 (Actual)
+- **Objetivo:** Pulido de UI/UX y Animaciones Premium.
+- **Logros:**
+  - ✅ **Rediseño de TabBar**: Implementación de una barra de navegación personalizada con botón central flotante y respuesta táctil (haptics).
+  - ✅ **Sistema de Haptics**: Centralización del feedback táctil en `services/haptics.js`, integrado en botones de acción y validaciones.
+  - ✅ **Animaciones de Dashboard**: Integración de contadores de dinero animados y transiciones suaves en las barras de presupuesto.
+  - ✅ **Spring Animations**: Aplicación de animaciones de rebote en la selección de categorías y en la visualización de tarjetas de gasto.
+  - ✅ **Ajustes de Layout**: Corrección de espaciado inferior en `perfil.jsx` y `presupuesto.jsx` para evitar que la TabBar tape el contenido.
+- **Estado de Git:** Todos los cambios confirmados (commits 84bf80f, 9205bc4, 8d899d9, a606965, 1bd17cd).
+
+### Sesión 15-Abr-2026
 - **Objetivo:** Organización del proyecto y mejora del historial.
 - **Logros:**
   - ✅ Implementación de `docs/CONTEXT.md`, `docs/ROADMAP.md` y `docs/BUGS.md`.
   - ✅ Implementación de **UX 6**: Selector de año y mes en el historial (navegación histórica completa).
   - ✅ Implementación de **Deducciones de nómina**: Cálculo de ingreso neto real restando ISR, IMSS, IVA y sumando Vales de Despensa.
   - ✅ Sincronización de día de corte en toda la app y corrección de zona horaria local.
-- **Estado de Git:** Pendiente de commit para cambios en historial, deducciones y documentación.
-- **Próximos pasos:** Atacar la lógica de categorías personalizadas o reportes con gráficas.
