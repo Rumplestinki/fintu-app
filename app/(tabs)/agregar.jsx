@@ -40,6 +40,52 @@ const formatearFechaLegible = (fechaISO) => {
   return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
 };
 
+// ─── COMPONENTE: CATEGORIA ANIMADA ────────────────────────
+
+function CategoriaAnimada({ cat, seleccionada, onPress }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    // Animación de rebote (spring)
+    Animated.sequence([
+      Animated.spring(scaleAnim, { 
+        toValue: 1.12, 
+        useNativeDriver: true, 
+        speed: 50, 
+        bounciness: 8 
+      }),
+      Animated.spring(scaleAnim, { 
+        toValue: 1, 
+        useNativeDriver: true, 
+        speed: 20, 
+        bounciness: 4 
+      }),
+    ]).start();
+    onPress();
+  };
+
+  return (
+    <Animated.View style={{ width: '30%', transform: [{ scale: scaleAnim }] }}>
+      <TouchableOpacity
+        style={[
+          estilos.categoriaBtn,
+          seleccionada && {
+            backgroundColor: cat.color + '30',
+            borderColor: cat.color,
+          },
+        ]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <Text style={estilos.categoriaIcono}>{cat.icono}</Text>
+        <Text style={[estilos.categoriaNombre, seleccionada && { color: cat.color }]}>
+          {cat.nombre}
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 // ─── COMPONENTE TOAST ─────────────────────────────────────
 
 function Toast({ visible, mensaje, tipo = 'exito' }) {
@@ -230,28 +276,14 @@ export default function AgregarGasto() {
         <View style={estilos.seccion}>
           <Text style={estilos.seccionTitulo}>Categoría</Text>
           <View style={estilos.categoriasGrid}>
-            {CATEGORIAS.map((cat) => {
-              const seleccionada = categoriaSeleccionada?.id === cat.id;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    estilos.categoriaBtn,
-                    seleccionada && {
-                      backgroundColor: cat.color + '30',
-                      borderColor: cat.color,
-                    },
-                  ]}
-                  onPress={() => handleCategoria(cat)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={estilos.categoriaIcono}>{cat.icono}</Text>
-                  <Text style={[estilos.categoriaNombre, seleccionada && { color: cat.color }]}>
-                    {cat.nombre}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            {CATEGORIAS.map((cat) => (
+              <CategoriaAnimada
+                key={cat.id}
+                cat={cat}
+                seleccionada={categoriaSeleccionada?.id === cat.id}
+                onPress={() => handleCategoria(cat)}
+              />
+            ))}
           </View>
         </View>
 
@@ -515,7 +547,7 @@ const estilos = StyleSheet.create({
     gap: 10,
   },
   categoriaBtn: {
-    width: '30%',
+    width: '100%',
     paddingVertical: 12,
     paddingHorizontal: 8,
     backgroundColor: COLORS.surface,
