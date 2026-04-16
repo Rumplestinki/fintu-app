@@ -115,28 +115,48 @@ export default function Dashboard() {
   const cargarDatos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
+ 
+      // Leer perfil: ahora también traemos dia_corte
+      let diaCorte = 1;
       if (user) {
         const { data: perfil } = await supabase
           .from('users')
-          .select('nombre, ingreso_mensual')
+          .select('nombre, ingreso_mensual, dia_corte')
           .eq('id', user.id)
           .single();
+ 
         setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
         setIngresosMes(perfil?.ingreso_mensual || 0);
+ 
+        // Guardar día de corte para calcular el periodo correcto
+        diaCorte = perfil?.dia_corte || 1;
       }
-
+ 
       const ahora = new Date();
-      const gastosDelMes = await obtenerGastosMes(ahora.getMonth() + 1, ahora.getFullYear());
+ 
+      // Pasamos diaCorte a obtenerGastosMes para que calcule el periodo correcto
+      // Si diaCorte = 1: comportamiento clásico (mes calendario)
+      // Si diaCorte = 15: gastos del 15 de este/anterior mes al 14 del siguiente
+      const gastosDelMes = await obtenerGastosMes(
+        ahora.getMonth() + 1,
+        ahora.getFullYear(),
+        diaCorte,           // ← nuevo parámetro
+      );
       const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
-
+ 
       const recientes = await obtenerUltimosGastos(5);
       setUltimosGastos(recientes);
-
-      const presupuestosData = await obtenerPresupuestosMes(ahora.getMonth() + 1, ahora.getFullYear());
-      const totalPresupuestado = presupuestosData.reduce((sum, p) => sum + parseFloat(p.limite), 0);
+ 
+      const presupuestosData = await obtenerPresupuestosMes(
+        ahora.getMonth() + 1,
+        ahora.getFullYear(),
+      );
+      const totalPresupuestado = presupuestosData.reduce(
+        (sum, p) => sum + parseFloat(p.limite), 0
+      );
       setPresupuestoMes(totalPresupuestado);
-
+ 
     } catch (error) {
       console.error('Error cargando dashboard:', error);
     } finally {

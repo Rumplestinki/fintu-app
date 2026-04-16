@@ -1,49 +1,61 @@
 // /app/(tabs)/perfil.jsx
+// Pantalla de perfil del usuario — incluye configuración de día de corte mensual
+
 import { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  ScrollView,
   Pressable,
   TextInput,
+  Modal,
   Alert,
   ActivityIndicator,
-  ScrollView,
-  Modal,
   KeyboardAvoidingView,
   Platform,
+  FlatList,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../constants/colors';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { COLORS } from '../../constants/colors';
 
 // ──────────────────────────────────────────
-// Formatea número a pesos mexicanos
+// Helpers
 // ──────────────────────────────────────────
-function formatMXN(monto) {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    minimumFractionDigits: 0,
-  }).format(monto || 0);
-}
+const formatMXN = (n) =>
+  `$${Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+
+// Genera días válidos 1-28 con descripción
+const DIAS_CORTE = Array.from({ length: 28 }, (_, i) => {
+  const dia = i + 1;
+  let etiqueta = `Día ${dia}`;
+  if (dia === 1) etiqueta = 'Día 1 — inicio de mes';
+  if (dia === 15) etiqueta = 'Día 15 — quincena';
+  return { dia, etiqueta };
+});
 
 // ──────────────────────────────────────────
-// Fila de opción del perfil
+// Sub-componente: fila de opción de perfil
 // ──────────────────────────────────────────
-function FilaOpcion({ icono, label, valor, onPress, peligro }) {
+function FilaOpcion({ icono, label, valor, onPress, peligro = false }) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.filaOpcion,
-        pressed && styles.filaOpcionPresionada,
+        pressed && { opacity: 0.7 },
       ]}
       onPress={onPress}
     >
-      <View style={[styles.filaIcono, peligro && styles.filaIconoPeligro]}>
+      <View
+        style={[
+          styles.filaIcono,
+          { backgroundColor: peligro ? COLORS.error + '20' : COLORS.primary + '15' },
+        ]}
+      >
         <Ionicons
           name={icono}
           size={18}
@@ -54,7 +66,9 @@ function FilaOpcion({ icono, label, valor, onPress, peligro }) {
         {label}
       </Text>
       {valor ? (
-        <Text style={styles.filaValor} numberOfLines={1}>{valor}</Text>
+        <Text style={styles.filaValor} numberOfLines={1}>
+          {valor}
+        </Text>
       ) : null}
       {!peligro && (
         <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
@@ -64,7 +78,7 @@ function FilaOpcion({ icono, label, valor, onPress, peligro }) {
 }
 
 // ──────────────────────────────────────────
-// Pantalla de perfil
+// Pantalla principal
 // ──────────────────────────────────────────
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
@@ -74,20 +88,21 @@ export default function PerfilScreen() {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [ingreso, setIngreso] = useState(0);
+  const [diaCorte, setDiaCorte] = useState(1);
   const [cargando, setCargando] = useState(true);
-
-  // Modal editar nombre
-  const [modalNombreVisible, setModalNombreVisible] = useState(false);
-  const [nombreInput, setNombreInput] = useState('');
-
-  // Modal editar ingreso
-  const [modalIngresoVisible, setModalIngresoVisible] = useState(false);
-  const [ingresoInput, setIngresoInput] = useState('');
-
   const [guardando, setGuardando] = useState(false);
 
+  // Modales
+  const [modalNombreVisible, setModalNombreVisible] = useState(false);
+  const [modalIngresoVisible, setModalIngresoVisible] = useState(false);
+  const [modalCorteVisible, setModalCorteVisible] = useState(false);
+
+  // Inputs temporales
+  const [nombreInput, setNombreInput] = useState('');
+  const [ingresoInput, setIngresoInput] = useState('');
+
   // ──────────────────────────────────────────
-  // Cargar datos del usuario
+  // Cargar datos del usuario desde Supabase
   // ──────────────────────────────────────────
   async function cargarPerfil() {
     try {
@@ -99,12 +114,13 @@ export default function PerfilScreen() {
 
       const { data: perfil } = await supabase
         .from('users')
-        .select('nombre, ingreso_mensual')
+        .select('nombre, ingreso_mensual, dia_corte')
         .eq('id', user.id)
         .single();
 
       setNombre(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
       setIngreso(perfil?.ingreso_mensual || 0);
+      setDiaCorte(perfil?.dia_corte || 1);
     } catch (e) {
       console.error('Error cargando perfil:', e);
     } finally {
@@ -173,6 +189,30 @@ export default function PerfilScreen() {
   }
 
   // ──────────────────────────────────────────
+  // Guardar día de corte
+  // ──────────────────────────────────────────
+  async function handleGuardarDiaCorte(nuevoDia) {
+    try {
+      setGuardando(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('users')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          dia_corte: nuevoDia,
+        });
+      if (error) throw error;
+      setDiaCorte(nuevoDia);
+      setModalCorteVisible(false);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo guardar el día de corte.');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // ──────────────────────────────────────────
   // Cerrar sesión
   // ──────────────────────────────────────────
   function handleLogout() {
@@ -198,6 +238,14 @@ export default function PerfilScreen() {
 
   const inicial = nombre.charAt(0).toUpperCase() || '?';
 
+  // Texto descriptivo del corte para mostrar en la fila
+  const textoCorte =
+    diaCorte === 1
+      ? 'Día 1 — inicio de mes'
+      : diaCorte === 15
+      ? 'Día 15 — quincena'
+      : `Día ${diaCorte} de cada mes`;
+
   // ──────────────────────────────────────────
   // Render principal
   // ──────────────────────────────────────────
@@ -213,16 +261,16 @@ export default function PerfilScreen() {
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 60 }} />
         ) : (
           <>
-            {/* Avatar */}
+            {/* ── Avatar ── */}
             <View style={styles.avatarSeccion}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarTexto}>{inicial}</Text>
               </View>
-              <Text style={styles.nombre}>{nombre}</Text>
-              <Text style={styles.email}>{email}</Text>
+              <Text style={styles.nombreTexto}>{nombre}</Text>
+              <Text style={styles.emailTexto}>{email}</Text>
             </View>
 
-            {/* Sección cuenta */}
+            {/* ── Sección: Cuenta ── */}
             <Text style={styles.seccionTitulo}>Cuenta</Text>
             <View style={styles.grupo}>
               <FilaOpcion
@@ -243,7 +291,7 @@ export default function PerfilScreen() {
               />
             </View>
 
-            {/* Sección finanzas */}
+            {/* ── Sección: Finanzas ── */}
             <Text style={styles.seccionTitulo}>Finanzas</Text>
             <View style={styles.grupo}>
               <FilaOpcion
@@ -255,57 +303,59 @@ export default function PerfilScreen() {
                   setModalIngresoVisible(true);
                 }}
               />
-            </View>
-
-            {/* Sección app */}
-            <Text style={styles.seccionTitulo}>App</Text>
-            <View style={styles.grupo}>
-              <FilaOpcion
-                icono="moon-outline"
-                label="Modo oscuro"
-                valor="Activado"
-                onPress={() => {}}
-              />
               <View style={styles.separador} />
+              {/* Nueva opción: día de corte */}
               <FilaOpcion
-                icono="cash-outline"
-                label="Moneda"
-                valor="MXN"
-                onPress={() => {}}
+                icono="calendar-outline"
+                label="Día de corte"
+                valor={textoCorte}
+                onPress={() => setModalCorteVisible(true)}
               />
             </View>
 
-            {/* Sesión */}
+            {/* Explicación breve del día de corte */}
+            <Text style={styles.notaExplicacion}>
+              📅 El día de corte define cuándo empieza tu mes financiero. Si cobras el 15,
+              ponlo en 15 y tus gastos se agruparán del 15 al 14 del siguiente mes.
+            </Text>
+
+            {/* ── Sección: Sesión ── */}
             <Text style={styles.seccionTitulo}>Sesión</Text>
             <View style={styles.grupo}>
               <FilaOpcion
                 icono="log-out-outline"
                 label="Cerrar sesión"
-                peligro
                 onPress={handleLogout}
+                peligro
               />
             </View>
 
-            <Text style={styles.version}>Fintú v1.0.0 — MVP</Text>
-            <View style={{ height: 40 }} />
+            <View style={{ height: 60 }} />
           </>
         )}
       </ScrollView>
 
-      {/* ── MODAL EDITAR NOMBRE ── */}
+      {/* ══════════════════════════════════════
+          MODAL: Editar nombre
+      ══════════════════════════════════════ */}
       <Modal
         visible={modalNombreVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setModalNombreVisible(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setModalNombreVisible(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <Pressable style={styles.modalContenido}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalNombreVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <Pressable style={styles.modalContenido} onPress={() => {}}>
               <View style={styles.modalHandle} />
-              <Text style={styles.modalTitulo}>Editar nombre</Text>
+              <Text style={styles.modalTitulo}>Nombre</Text>
               <TextInput
-                style={styles.input}
+                style={styles.inputTexto}
                 value={nombreInput}
                 onChangeText={setNombreInput}
                 placeholder="Tu nombre"
@@ -314,14 +364,22 @@ export default function PerfilScreen() {
                 maxLength={40}
               />
               <View style={styles.modalBotones}>
-                <Pressable style={styles.botonCancelar} onPress={() => setModalNombreVisible(false)}>
+                <Pressable
+                  style={styles.botonCancelar}
+                  onPress={() => setModalNombreVisible(false)}
+                >
                   <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                 </Pressable>
-                <Pressable style={styles.botonGuardar} onPress={handleGuardarNombre} disabled={guardando}>
-                  {guardando
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.botonGuardarTexto}>Guardar</Text>
-                  }
+                <Pressable
+                  style={styles.botonGuardar}
+                  onPress={handleGuardarNombre}
+                  disabled={guardando}
+                >
+                  {guardando ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.botonGuardarTexto}>Guardar</Text>
+                  )}
                 </Pressable>
               </View>
             </Pressable>
@@ -329,20 +387,27 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── MODAL EDITAR INGRESO ── */}
+      {/* ══════════════════════════════════════
+          MODAL: Editar ingreso mensual
+      ══════════════════════════════════════ */}
       <Modal
         visible={modalIngresoVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setModalIngresoVisible(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setModalIngresoVisible(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <Pressable style={styles.modalContenido}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalIngresoVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <Pressable style={styles.modalContenido} onPress={() => {}}>
               <View style={styles.modalHandle} />
               <Text style={styles.modalTitulo}>Ingreso mensual</Text>
               <Text style={styles.modalSubtitulo}>
-                Este número se usa para calcular cuánto tienes disponible cada mes
+                Se usa para calcular cuánto tienes disponible cada mes
               </Text>
               <View style={styles.inputMontoContenedor}>
                 <Text style={styles.inputPrefijo}>$</Text>
@@ -357,14 +422,22 @@ export default function PerfilScreen() {
                 />
               </View>
               <View style={styles.modalBotones}>
-                <Pressable style={styles.botonCancelar} onPress={() => setModalIngresoVisible(false)}>
+                <Pressable
+                  style={styles.botonCancelar}
+                  onPress={() => setModalIngresoVisible(false)}
+                >
                   <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                 </Pressable>
-                <Pressable style={styles.botonGuardar} onPress={handleGuardarIngreso} disabled={guardando}>
-                  {guardando
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.botonGuardarTexto}>Guardar</Text>
-                  }
+                <Pressable
+                  style={styles.botonGuardar}
+                  onPress={handleGuardarIngreso}
+                  disabled={guardando}
+                >
+                  {guardando ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.botonGuardarTexto}>Guardar</Text>
+                  )}
                 </Pressable>
               </View>
             </Pressable>
@@ -372,6 +445,90 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
+      {/* ══════════════════════════════════════
+          MODAL: Selector de día de corte
+          Lista de días del 1 al 28
+      ══════════════════════════════════════ */}
+      <Modal
+        visible={modalCorteVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalCorteVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalCorteVisible(false)}
+        >
+          <Pressable style={[styles.modalContenido, { paddingBottom: 0 }]} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitulo}>Día de corte</Text>
+            <Text style={styles.modalSubtitulo}>
+              ¿Qué día del mes empieza tu periodo financiero?
+            </Text>
+
+            {/* Lista de días con FlatList para scroll interno */}
+            <FlatList
+              data={DIAS_CORTE}
+              keyExtractor={(item) => String(item.dia)}
+              style={{ maxHeight: 340 }}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const seleccionado = item.dia === diaCorte;
+                return (
+                  <Pressable
+                    style={[
+                      styles.diaItem,
+                      seleccionado && styles.diaItemActivo,
+                    ]}
+                    onPress={() => handleGuardarDiaCorte(item.dia)}
+                  >
+                    {/* Número grande del día */}
+                    <View
+                      style={[
+                        styles.diaNumero,
+                        seleccionado && styles.diaNumeroActivo,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.diaNumeroTexto,
+                          seleccionado && styles.diaNumeroTextoActivo,
+                        ]}
+                      >
+                        {item.dia}
+                      </Text>
+                    </View>
+
+                    {/* Etiqueta descriptiva */}
+                    <Text
+                      style={[
+                        styles.diaEtiqueta,
+                        seleccionado && { color: COLORS.primary, fontWeight: '600' },
+                      ]}
+                    >
+                      {item.etiqueta}
+                    </Text>
+
+                    {/* Checkmark si está seleccionado */}
+                    {seleccionado && (
+                      <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
+                    )}
+                  </Pressable>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={styles.separador} />}
+            />
+
+            {/* Botón cancelar */}
+            <Pressable
+              style={[styles.botonCancelar, { margin: 16 }]}
+              onPress={() => setModalCorteVisible(false)}
+            >
+              <Text style={styles.botonCancelarTexto}>Cancelar</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -380,93 +537,256 @@ export default function PerfilScreen() {
 // Estilos
 // ──────────────────────────────────────────
 const styles = StyleSheet.create({
-  contenedor: { flex: 1, backgroundColor: COLORS.background },
-  cabecera: { paddingHorizontal: 20, paddingVertical: 16 },
-  titulo: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '700' },
-
-  avatarSeccion: { alignItems: 'center', paddingVertical: 24 },
-  avatar: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
+  contenedor: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-  avatarTexto: { fontSize: 32, fontWeight: '700', color: '#fff' },
-  nombre: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '600', marginBottom: 4 },
-  email: { color: COLORS.textSecondary, fontSize: 14 },
+  cabecera: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  titulo: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
 
+  // ── Avatar ──
+  avatarSeccion: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 6,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  avatarTexto: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  nombreTexto: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  emailTexto: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+
+  // ── Secciones ──
   seccionTitulo: {
-    color: COLORS.textSecondary, fontSize: 12, fontWeight: '600',
-    textTransform: 'uppercase', letterSpacing: 0.5,
-    marginHorizontal: 20, marginTop: 24, marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 8,
   },
   grupo: {
-    backgroundColor: COLORS.surface, borderRadius: 14,
-    marginHorizontal: 20, overflow: 'hidden',
+    backgroundColor: COLORS.surface,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
   },
-  separador: { height: 1, backgroundColor: COLORS.border, marginLeft: 56 },
+  separador: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginLeft: 56,
+  },
 
+  // ── Fila de opción ──
   filaOpcion: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
   },
-  filaOpcionPresionada: { backgroundColor: COLORS.surfaceLight },
   filaIcono: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: COLORS.primary + '20',
-    justifyContent: 'center', alignItems: 'center',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  filaIconoPeligro: { backgroundColor: COLORS.error + '20' },
-  filaLabel: { color: COLORS.textPrimary, fontSize: 15, flex: 1 },
+  filaLabel: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
   filaValor: {
-    color: COLORS.textSecondary, fontSize: 14,
-    maxWidth: 140, textAlign: 'right', marginRight: 4,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    maxWidth: 140,
+    textAlign: 'right',
   },
 
-  version: { color: COLORS.textMuted, fontSize: 12, textAlign: 'center', marginTop: 32 },
+  // ── Nota de explicación ──
+  notaExplicacion: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginHorizontal: 20,
+    marginTop: 10,
+    lineHeight: 19,
+  },
 
-  // Modales
+  // ── Modal base ──
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end',
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
   modalContenido: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
   },
   modalHandle: {
-    width: 40, height: 4, backgroundColor: COLORS.border,
-    borderRadius: 2, alignSelf: 'center', marginBottom: 20,
+    width: 40,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
-  modalTitulo: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 6 },
-  modalSubtitulo: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 16 },
+  modalTitulo: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  modalSubtitulo: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 19,
+  },
 
-  input: {
-    backgroundColor: COLORS.background, borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    color: COLORS.textPrimary, fontSize: 16, marginBottom: 20,
-  },
-  inputMontoContenedor: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.background, borderRadius: 12,
-    paddingHorizontal: 16, marginBottom: 24,
-  },
-  inputPrefijo: { color: COLORS.textSecondary, fontSize: 24, marginRight: 4 },
-  inputMonto: {
-    flex: 1, color: COLORS.textPrimary, fontSize: 32,
-    fontWeight: '600', paddingVertical: 16,
-  },
-
-  modalBotones: { flexDirection: 'row', gap: 10 },
-  botonCancelar: {
-    flex: 1, height: 48, borderRadius: 12,
+  // ── Input de texto ──
+  inputTexto: {
     backgroundColor: COLORS.background,
-    justifyContent: 'center', alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  botonCancelarTexto: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '500' },
-  botonGuardar: {
-    flex: 2, height: 48, borderRadius: 12,
+
+  // ── Input de monto ──
+  inputMontoContenedor: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  inputPrefijo: {
+    fontSize: 24,
+    color: COLORS.textSecondary,
+    marginRight: 4,
+  },
+  inputMonto: {
+    flex: 1,
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    paddingVertical: 12,
+  },
+
+  // ── Selector de día de corte ──
+  diaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 12,
+  },
+  diaItemActivo: {
+    backgroundColor: COLORS.primary + '12',
+  },
+  diaNumero: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  diaNumeroActivo: {
     backgroundColor: COLORS.primary,
-    justifyContent: 'center', alignItems: 'center',
+    borderColor: COLORS.primary,
   },
-  botonGuardarTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  diaNumeroTexto: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  diaNumeroTextoActivo: {
+    color: '#fff',
+  },
+  diaEtiqueta: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+  },
+
+  // ── Botones ──
+  modalBotones: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  botonCancelar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  botonCancelarTexto: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  botonGuardar: {
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  botonGuardarTexto: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });

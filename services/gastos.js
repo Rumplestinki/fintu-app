@@ -2,11 +2,53 @@
 import { supabase } from './supabase';
 
 // ──────────────────────────────────────────
-// Gastos del mes actual — para el dashboard
+// Helper: calcular rango de fechas según día de corte
+// Dado un día de corte (1-28), devuelve el inicio y fin
+// del periodo "actual" o "anterior"
+//
+// Ejemplo con dia_corte = 15:
+//   Hoy = 20 de abril → periodo actual: 15 abr – 14 may
+//   Hoy = 10 de abril → periodo actual: 15 mar – 14 abr
 // ──────────────────────────────────────────
-export async function obtenerGastosMes(mes, anio) {
-  const fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
-  const fechaFin = new Date(anio, mes, 0).toISOString().split('T')[0];
+export function calcularPeriodo(diaCorte = 1, offset = 0) {
+  const hoy = new Date();
+  const diaActual = hoy.getDate();
+
+  // Determinar si ya pasamos el día de corte este mes
+  // Si diaActual >= diaCorte → el periodo actual empezó este mes
+  // Si diaActual < diaCorte  → el periodo actual empezó el mes pasado
+  let mesInicio, anioInicio;
+
+  if (diaActual >= diaCorte) {
+    // Estamos dentro del periodo que empezó este mes
+    mesInicio = hoy.getMonth();      // 0-indexed
+    anioInicio = hoy.getFullYear();
+  } else {
+    // Aún no llegamos al corte, el periodo empezó el mes pasado
+    const fechaPasada = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    mesInicio = fechaPasada.getMonth();
+    anioInicio = fechaPasada.getFullYear();
+  }
+
+  // Aplicar offset: -1 = periodo anterior, 0 = actual
+  const fechaInicioBase = new Date(anioInicio, mesInicio - offset, diaCorte);
+  const fechaFinBase = new Date(anioInicio, mesInicio - offset + 1, diaCorte - 1);
+
+  const toISO = (d) => d.toISOString().split('T')[0];
+
+  return {
+    inicio: toISO(fechaInicioBase),
+    fin: toISO(fechaFinBase),
+  };
+}
+
+// ──────────────────────────────────────────
+// Gastos de un periodo con día de corte
+// Reemplaza a obtenerGastosMes cuando el usuario tiene dia_corte configurado
+// ──────────────────────────────────────────
+export async function obtenerGastosPeriodo(diaCorte = 1, offset = 0) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { inicio, fin } = calcularPeriodo(diaCorte, offset);
 
   const { data, error } = await supabase
     .from('gastos')
@@ -19,7 +61,49 @@ export async function obtenerGastosMes(mes, anio) {
         color
       )
     `)
-    .eq('user_id', (await supabase.auth.getUser()).data.user.id)
+    .eq('user_id', user.id)
+    .gte('fecha', inicio)
+    .lte('fecha', fin)
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return { data, inicio, fin };
+}
+
+// ──────────────────────────────────────────
+// Gastos del mes actual — para el dashboard
+// Mantiene compatibilidad con código existente
+// Acepta diaCorte opcional (default = 1 = comportamiento anterior)
+// ──────────────────────────────────────────
+export async function obtenerGastosMes(mes, anio, diaCorte = 1) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let fechaInicio, fechaFin;
+
+  if (diaCorte === 1) {
+    // Comportamiento clásico: mes calendario
+    fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    fechaFin = new Date(anio, mes, 0).toISOString().split('T')[0];
+  } else {
+    // Usar periodo basado en día de corte
+    const { inicio, fin } = calcularPeriodo(diaCorte, 0);
+    fechaInicio = inicio;
+    fechaFin = fin;
+  }
+
+  const { data, error } = await supabase
+    .from('gastos')
+    .select(`
+      *,
+      categorias (
+        id,
+        nombre,
+        icono,
+        color
+      )
+    `)
+    .eq('user_id', user.id)
     .gte('fecha', fechaInicio)
     .lte('fecha', fechaFin)
     .order('fecha', { ascending: false })
@@ -79,14 +163,19 @@ export async function obtenerTodosLosGastos(userId) {
 }
 
 // ──────────────────────────────────────────
-// Registrar un nuevo gasto
+// Registrar nuevo gasto
 // ──────────────────────────────────────────
-export async function registrarGasto(gasto) {
-  const { data: { user } } = await supabase.auth.getUser();
-
+export async function registrarGasto({ userId, monto, categoriaId, descripcion, fecha, origen = 'manual' }) {
   const { data, error } = await supabase
     .from('gastos')
-    .insert([{ ...gasto, user_id: user.id }])
+    .insert({
+      user_id: userId,
+      monto,
+      categoria_id: categoriaId,
+      descripcion,
+      fecha,
+      origen,
+    })
     .select()
     .single();
 
@@ -95,28 +184,28 @@ export async function registrarGasto(gasto) {
 }
 
 // ──────────────────────────────────────────
-// Eliminar un gasto por ID
+// Actualizar gasto existente
 // ──────────────────────────────────────────
-export async function eliminarGasto(gastoId) {
-  const { error } = await supabase
-    .from('gastos')
-    .delete()
-    .eq('id', gastoId);
-
-  if (error) throw error;
-}
-
-// ──────────────────────────────────────────
-// Actualizar un gasto existente por ID
-// ──────────────────────────────────────────
-export async function actualizarGasto(gastoId, cambios) {
+export async function actualizarGasto(id, cambios) {
   const { data, error } = await supabase
     .from('gastos')
     .update(cambios)
-    .eq('id', gastoId)
+    .eq('id', id)
     .select()
     .single();
 
   if (error) throw error;
   return data;
+}
+
+// ──────────────────────────────────────────
+// Eliminar gasto
+// ──────────────────────────────────────────
+export async function eliminarGasto(id) {
+  const { error } = await supabase
+    .from('gastos')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
