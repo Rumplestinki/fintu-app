@@ -77,6 +77,7 @@
 - **Logros:**
   - ✅ Implementación de `docs/CONTEXT.md`, `docs/ROADMAP.md` y `docs/BUGS.md`.
   - ✅ Implementación de **UX 6**: Selector de año y mes en el historial (navegación histórica completa).
-  - ✅ Vinculación de esquema real de base de datos a la documentación.
-- **Estado de Git:** Pendiente de commit para cambios en historial y documentación.
-- **Próximos pasos:** Atacar la lógica de día de corte en presupuestos o categorías personalizadas.
+  - ✅ Implementación de **Deducciones de nómina**: Cálculo de ingreso neto real restando ISR, IMSS, IVA y sumando Vales de Despensa.
+  - ✅ Sincronización de día de corte en toda la app y corrección de zona horaria local.
+- **Estado de Git:** Pendiente de commit para cambios en historial, deducciones y documentación.
+- **Próximos pasos:** Atacar la lógica de categorías personalizadas o reportes con gráficas.

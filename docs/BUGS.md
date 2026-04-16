@@ -4,10 +4,10 @@ Este archivo documenta bugs complejos encontrados durante el desarrollo, su caus
 
 ---
 
-## [2026-04-15] Bug 7: Error de sintaxis por bloque de código duplicado
-- **Síntoma:** "SyntaxError: 'return' outside of function" al empaquetar la aplicación o al guardar un cambio.
-- **Causa:** Un bloque completo de la función en `services/voz.js` y `app/(tabs)/gastos.jsx` se duplicó durante un refactor automático, dejando la palabra reservada `return` fuera de su alcance.
-- **Solución:** Limpiar el código y eliminar los bloques duplicados para recuperar la sintaxis correcta.
+## [2026-04-15] Bug 8: Error PGRST204 - Columnas inexistentes en tabla "users"
+- **Síntoma:** Error al intentar guardar la configuración de ingresos: `Could not find the 'imss' column of 'users' in the schema cache`.
+- **Causa:** Se implementó la lógica de deducciones en el código frontend antes de crear las columnas correspondientes en la tabla `users` de Supabase.
+- **Solución:** Ejecutar un script `ALTER TABLE` en el editor SQL de Supabase para añadir los campos `isr`, `imss`, `iva` y `vales_despensa` con tipo `NUMERIC` y valor por defecto `0`.
 
 ---
 

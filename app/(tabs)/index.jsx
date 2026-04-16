@@ -102,7 +102,7 @@ export default function Dashboard() {
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
   const [presupuestoMes, setPresupuestoMes] = useState(0);
-  const [ingresosMes, setIngresosMes] = useState(0);
+  const [ingresosNetos, setIngresosNetos] = useState(0);
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
   const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
@@ -128,19 +128,31 @@ export default function Dashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
  
-      // Leer perfil: ahora también traemos dia_corte
+      // Leer perfil
       let diaCorte = 1;
       if (user) {
         const { data: perfil } = await supabase
           .from('users')
-          .select('nombre, ingreso_mensual, dia_corte')
+          .select('nombre, ingreso_mensual, dia_corte, isr, imss, iva, vales_despensa, frecuencia_pago, fondo_ahorro')
           .eq('id', user.id)
           .single();
  
         setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
-        setIngresosMes(perfil?.ingreso_mensual || 0);
- 
-        // Guardar día de corte para calcular el periodo correcto
+        
+        // Calcular neto real mensual proyectado
+        const bruto = perfil?.ingreso_mensual || 0;
+        const isr = perfil?.isr || 0;
+        const imss = perfil?.imss || 0;
+        const iva = perfil?.iva || 0;
+        const vales = perfil?.vales_despensa || 0;
+        const fondo = perfil?.fondo_ahorro || 0;
+        const frecuencia = perfil?.frecuencia_pago || 'mensual';
+        
+        const factor = frecuencia === 'quincenal' ? 2 : 1;
+        // Fórmula refinada: (Sueldo - Impuestos - Mi Ahorro + Vales) * frecuencia
+        const netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
+        
+        setIngresosNetos(netoMensual);
         diaCorte = perfil?.dia_corte || 1;
       }
  
@@ -168,7 +180,8 @@ export default function Dashboard() {
       const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
  
-      const recientes = await obtenerUltimosGastos(5);
+      // Filtrar los últimos 5 gastos pero DENTRO del periodo actual
+      const recientes = await obtenerUltimosGastos(5, inicio, fin);
       setUltimosGastos(recientes);
  
       // Obtener presupuestos usando el mes/año de inicio del periodo
@@ -254,7 +267,7 @@ export default function Dashboard() {
   };
 
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
-  const disponible = ingresosMes - gastadoMes;
+  const disponible = ingresosNetos - gastadoMes;
 
   return (
     <View style={estilos.contenedor}>
@@ -322,9 +335,9 @@ export default function Dashboard() {
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
-              <Text style={estilos.tarjetaMiniLabel}>Ingresos</Text>
+              <Text style={estilos.tarjetaMiniLabel}>Ingresos Netos</Text>
               <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>
-                {formatMXN(ingresosMes)}
+                {formatMXN(ingresosNetos)}
               </Text>
             </View>
             <View style={estilos.tarjetaMini}>
