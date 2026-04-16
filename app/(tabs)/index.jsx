@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
-import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto } from '../../services/gastos';
+import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import BotonVoz from '../../components/BotonVoz';
 import AlertaPresupuesto from '../../components/AlertaPresupuesto';
@@ -48,6 +48,11 @@ const formatearFechaGasto = (fechaISO) => {
 };
 
 const formatearFechaISO = (date) => new Date(date).toISOString().split('T')[0];
+
+const NOMBRES_MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
 
 // ─── COMPONENTE TOAST ─────────────────────────────────────
 import React from 'react';
@@ -94,6 +99,7 @@ export default function Dashboard() {
   const [ingresosMes, setIngresosMes] = useState(0);
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
+  const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
 
   // Alertas de presupuesto
   const [alertas, setAlertas] = useState([]);
@@ -132,26 +138,35 @@ export default function Dashboard() {
         diaCorte = perfil?.dia_corte || 1;
       }
  
-      const ahora = new Date();
+      // Calcular el periodo actual basado en el día de corte
+      const { inicio, fin } = calcularPeriodo(diaCorte, 0);
+      const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
+      const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
+
+      // El mes y año del presupuesto deben corresponder al INICIO del periodo
+      const budgetMonth = mesIni;
+      const budgetYear = anioIni;
+
+      // Actualizar info del periodo para el header
+      let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
+      let rangoPeriodo = '';
+      if (diaCorte > 1) {
+        const mesFinCorto = NOMBRES_MESES[mesFin - 1].substring(0, 3);
+        const mesIniCorto = NOMBRES_MESES[mesIni - 1].substring(0, 3);
+        rangoPeriodo = `${diaIni} ${mesIniCorto} – ${diaFin} ${mesFinCorto}`;
+      }
+      setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo });
  
-      // Pasamos diaCorte a obtenerGastosMes para que calcule el periodo correcto
-      // Si diaCorte = 1: comportamiento clásico (mes calendario)
-      // Si diaCorte = 15: gastos del 15 de este/anterior mes al 14 del siguiente
-      const gastosDelMes = await obtenerGastosMes(
-        ahora.getMonth() + 1,
-        ahora.getFullYear(),
-        diaCorte,           // ← nuevo parámetro
-      );
+      // Obtener gastos del periodo
+      const gastosDelMes = await obtenerGastosMes(budgetMonth, budgetYear, diaCorte);
       const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
  
       const recientes = await obtenerUltimosGastos(5);
       setUltimosGastos(recientes);
  
-      const presupuestosData = await obtenerPresupuestosMes(
-        ahora.getMonth() + 1,
-        ahora.getFullYear(),
-      );
+      // Obtener presupuestos usando el mes/año de inicio del periodo
+      const presupuestosData = await obtenerPresupuestosMes(budgetMonth, budgetYear);
       const totalPresupuestado = presupuestosData.reduce(
         (sum, p) => sum + parseFloat(p.limite), 0
       );
@@ -203,9 +218,13 @@ export default function Dashboard() {
 
     try {
       setGuardandoVoz(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+
       await registrarGasto({
+        userId: user?.id,
         monto: parseFloat(datos.monto),
-        categoria_id: datos.categoria?.dbId || 9,
+        categoriaId: datos.categoria?.dbId || 9,
         descripcion: datos.descripcion || '',
         fecha: datos.fecha || formatearFechaISO(new Date()),
         origen: 'voz',
@@ -230,8 +249,6 @@ export default function Dashboard() {
 
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
   const disponible = ingresosMes - gastadoMes;
-  const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
-  const mesCapitalizado = mesActual.charAt(0).toUpperCase() + mesActual.slice(1);
 
   return (
     <View style={estilos.contenedor}>
@@ -245,7 +262,12 @@ export default function Dashboard() {
         <View style={estilos.headerTop}>
           <View>
             <Text style={estilos.saludo}>Hola, {nombreUsuario} 👋</Text>
-            <Text style={estilos.fechaMes}>{mesCapitalizado}</Text>
+            <View style={estilos.periodoContenedor}>
+              <Text style={estilos.fechaMes}>{infoPeriodo.label}</Text>
+              {infoPeriodo.rango !== '' && (
+                <Text style={estilos.rangoPeriodo}>{infoPeriodo.rango}</Text>
+              )}
+            </View>
           </View>
           <TouchableOpacity
             style={estilos.avatar}
@@ -460,7 +482,9 @@ const estilos = StyleSheet.create({
     alignItems: 'flex-start', marginBottom: 20,
   },
   saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
+  periodoContenedor: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
+  rangoPeriodo: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '500', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   avatar: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.2)',

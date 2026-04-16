@@ -19,7 +19,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { obtenerPresupuestosMes, guardarPresupuesto, eliminarPresupuesto } from '../../services/presupuestos';
-import { obtenerGastosMes } from '../../services/gastos';
+import { obtenerGastosMes, calcularPeriodo } from '../../services/gastos';
+import { supabase } from '../../services/supabase';
+
+// ──────────────────────────────────────────
+// Constantes
+// ──────────────────────────────────────────
+const NOMBRES_MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
 
 // ──────────────────────────────────────────
 // Formatea número a pesos mexicanos
@@ -68,21 +77,11 @@ function BarraPresupuesto({ gastado, limite }) {
 export default function PresupuestoScreen() {
   const insets = useSafeAreaInsets();
 
-  // Mes y año actuales
-  const ahora = new Date();
-  const mesActual = ahora.getMonth() + 1;
-  const anioActual = ahora.getFullYear();
-
-  // Nombre del mes en español
-  const nombreMes = ahora.toLocaleDateString('es-MX', {
-    month: 'long', year: 'numeric'
-  });
-  const nombreMesCapitalizado = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
-
   // ── Estado ──
   const [presupuestos, setPresupuestos] = useState([]);  // datos de Supabase
   const [gastosPorCategoria, setGastosPorCategoria] = useState({}); // { categoria_id: total }
   const [cargando, setCargando] = useState(true);
+  const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '', mes: 1, anio: 2026 });
 
   // Modal para editar un presupuesto
   const [modalVisible, setModalVisible] = useState(false);
@@ -97,10 +96,40 @@ export default function PresupuestoScreen() {
     try {
       setCargando(true);
 
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Obtener dia_corte del perfil
+      const { data: perfil } = await supabase
+        .from('users')
+        .select('dia_corte')
+        .eq('id', user.id)
+        .single();
+
+      const diaCorte = perfil?.dia_corte || 1;
+
+      // Calcular el periodo actual basado en el día de corte
+      const { inicio, fin } = calcularPeriodo(diaCorte, 0);
+      const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
+      const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
+
+      // El mes y año del presupuesto deben corresponder al INICIO del periodo
+      const budgetMonth = mesIni;
+      const budgetYear = anioIni;
+
+      // Actualizar info del periodo
+      let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
+      let rangoPeriodo = '';
+      if (diaCorte > 1) {
+        const mesFinCorto = NOMBRES_MESES[mesFin - 1].substring(0, 3);
+        const mesIniCorto = NOMBRES_MESES[mesIni - 1].substring(0, 3);
+        rangoPeriodo = `(${diaIni} ${mesIniCorto} – ${diaFin} ${mesFinCorto})`;
+      }
+      setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo, mes: budgetMonth, anio: budgetYear });
+
       // Cargar presupuestos y gastos en paralelo
       const [presupuestosData, gastosData] = await Promise.all([
-        obtenerPresupuestosMes(mesActual, anioActual),
-        obtenerGastosMes(mesActual, anioActual),
+        obtenerPresupuestosMes(budgetMonth, budgetYear),
+        obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
       ]);
 
       setPresupuestos(presupuestosData);
@@ -153,7 +182,7 @@ export default function PresupuestoScreen() {
 
     try {
       setGuardando(true);
-      await guardarPresupuesto(categoriaEditando.dbId, limite, mesActual, anioActual);
+      await guardarPresupuesto(categoriaEditando.dbId, limite, infoPeriodo.mes, infoPeriodo.anio);
 
       // Actualizar lista local sin recargar todo
       setPresupuestos((prev) => {
@@ -163,7 +192,7 @@ export default function PresupuestoScreen() {
             p.categoria_id === categoriaEditando.dbId ? { ...p, limite } : p
           );
         }
-        return [...prev, { categoria_id: categoriaEditando.dbId, limite, mes: mesActual, anio: anioActual }];
+        return [...prev, { categoria_id: categoriaEditando.dbId, limite, mes: infoPeriodo.mes, anio: infoPeriodo.anio }];
       });
 
       setModalVisible(false);
@@ -229,7 +258,9 @@ export default function PresupuestoScreen() {
       {/* Título */}
       <View style={styles.cabecera}>
         <Text style={styles.titulo}>Presupuesto</Text>
-        <Text style={styles.subtitulo}>{nombreMesCapitalizado}</Text>
+        <Text style={styles.subtitulo}>
+          {infoPeriodo.label} <Text style={styles.rangoTexto}>{infoPeriodo.rango}</Text>
+        </Text>
       </View>
 
       {cargando ? (
@@ -444,6 +475,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
     marginTop: 2,
+  },
+  rangoTexto: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    opacity: 0.7,
   },
   contenedorCarga: {
     flex: 1,

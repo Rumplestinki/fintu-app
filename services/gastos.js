@@ -165,13 +165,21 @@ export async function obtenerTodosLosGastos(userId) {
 // ──────────────────────────────────────────
 // Registrar nuevo gasto
 // ──────────────────────────────────────────
-export async function registrarGasto({ userId, monto, categoriaId, descripcion, fecha, origen = 'manual' }) {
+export async function registrarGasto({ userId, monto, categoriaId, categoria_id, descripcion, fecha, origen = 'manual' }) {
+  let uid = userId;
+  if (!uid) {
+    const { data: { user } } = await supabase.auth.getUser();
+    uid = user?.id;
+  }
+
+  const cid = categoriaId || categoria_id;
+
   const { data, error } = await supabase
     .from('gastos')
     .insert({
-      user_id: userId,
+      user_id: uid,
       monto,
-      categoria_id: categoriaId,
+      categoria_id: cid,
       descripcion,
       fecha,
       origen,

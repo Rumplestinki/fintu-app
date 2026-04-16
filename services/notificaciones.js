@@ -4,8 +4,9 @@
 // Las alertas se muestran como banners premium dentro del dashboard
 
 import { obtenerPresupuestosMes } from './presupuestos';
-import { obtenerGastosMes } from './gastos';
+import { obtenerGastosMes, calcularPeriodo } from './gastos';
 import { getCategoriaByDbId } from '../constants/categorias';
+import { supabase } from './supabase';
 
 // ──────────────────────────────────────────
 // Verificar presupuestos y devolver alertas
@@ -14,13 +15,29 @@ import { getCategoriaByDbId } from '../constants/categorias';
 // ──────────────────────────────────────────
 export async function verificarPresupuestos() {
   try {
-    const ahora = new Date();
-    const mes = ahora.getMonth() + 1;
-    const anio = ahora.getFullYear();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    // Obtener dia_corte del perfil
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('dia_corte')
+      .eq('id', user.id)
+      .single();
+
+    const diaCorte = perfil?.dia_corte || 1;
+
+    // Calcular el periodo actual basado en el día de corte
+    const { inicio } = calcularPeriodo(diaCorte, 0);
+    const [anioIni, mesIni] = inicio.split('-').map(Number);
+
+    // El mes y año del presupuesto deben corresponder al INICIO del periodo
+    const budgetMonth = mesIni;
+    const budgetYear = anioIni;
 
     const [presupuestos, gastos] = await Promise.all([
-      obtenerPresupuestosMes(mes, anio),
-      obtenerGastosMes(mes, anio),
+      obtenerPresupuestosMes(budgetMonth, budgetYear),
+      obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
     ]);
 
     if (!presupuestos || presupuestos.length === 0) return [];
