@@ -1,5 +1,5 @@
 // /app/(tabs)/presupuesto.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +23,7 @@ import { CATEGORIAS } from '../../constants/categorias';
 import { obtenerPresupuestosMes, guardarPresupuesto, eliminarPresupuesto } from '../../services/presupuestos';
 import { obtenerGastosMes, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
+import { hap } from '../../services/haptics';
 
 // ──────────────────────────────────────────
 // Constantes
@@ -45,8 +48,9 @@ function formatMXN(monto) {
 // Barra de progreso de una categoría
 // Muestra cuánto gastaste vs tu límite
 // ──────────────────────────────────────────
-function BarraPresupuesto({ gastado, limite }) {
+function BarraPresupuesto({ gastado, limite, delay = 0 }) {
   const porcentaje = limite > 0 ? Math.min((gastado / limite) * 100, 100) : 0;
+  const anchoAnim = useRef(new Animated.Value(0)).current;
 
   // Color según qué tan cerca está del límite
   const colorBarra =
@@ -54,13 +58,31 @@ function BarraPresupuesto({ gastado, limite }) {
     porcentaje >= 80  ? COLORS.warning :
     COLORS.primary;
 
+  useEffect(() => {
+    // Resetear y animar cada vez que cambia el porcentaje
+    anchoAnim.setValue(0);
+    Animated.timing(anchoAnim, {
+      toValue: porcentaje,
+      duration: 700,
+      delay: delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [porcentaje]);
+
   return (
     <View style={styles.barraContenedor}>
       <View style={styles.barraBg}>
-        <View
+        <Animated.View
           style={[
             styles.barraRelleno,
-            { width: `${porcentaje}%`, backgroundColor: colorBarra },
+            {
+              width: anchoAnim.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%'],
+              }),
+              backgroundColor: colorBarra,
+            },
           ]}
         />
       </View>
@@ -89,6 +111,18 @@ export default function PresupuestoScreen() {
   const [limiteInput, setLimiteInput] = useState('');
   const [guardando, setGuardando] = useState(false);
 
+  // Modal eliminación
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
+
+  // Animación barra general
+  const barraGeneralAnim = useRef(new Animated.Value(0)).current;
+
+  // Toast
+  const [toastMensaje, setToastMensaje] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastTipo, setToastTipo] = useState('exito');
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
   // ──────────────────────────────────────────
   // Cargar presupuestos y gastos del mes
   // ──────────────────────────────────────────
@@ -98,7 +132,6 @@ export default function PresupuestoScreen() {
 
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Obtener dia_corte del perfil
       const { data: perfil } = await supabase
         .from('users')
         .select('dia_corte')
@@ -107,16 +140,13 @@ export default function PresupuestoScreen() {
 
       const diaCorte = perfil?.dia_corte || 1;
 
-      // Calcular el periodo actual basado en el día de corte
       const { inicio, fin } = calcularPeriodo(diaCorte, 0);
       const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
       const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
 
-      // El mes y año del presupuesto deben corresponder al INICIO del periodo
       const budgetMonth = mesIni;
       const budgetYear = anioIni;
 
-      // Actualizar info del periodo
       let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
       let rangoPeriodo = '';
       if (diaCorte > 1) {
@@ -126,7 +156,6 @@ export default function PresupuestoScreen() {
       }
       setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo, mes: budgetMonth, anio: budgetYear });
 
-      // Cargar presupuestos y gastos en paralelo
       const [presupuestosData, gastosData] = await Promise.all([
         obtenerPresupuestosMes(budgetMonth, budgetYear),
         obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
@@ -134,7 +163,6 @@ export default function PresupuestoScreen() {
 
       setPresupuestos(presupuestosData);
 
-      // Agrupar gastos por categoria_id y sumar montos
       const totales = {};
       for (const gasto of gastosData) {
         const cid = gasto.categoria_id;
@@ -144,18 +172,55 @@ export default function PresupuestoScreen() {
 
     } catch (e) {
       console.error('Error cargando presupuestos:', e);
-      Alert.alert('Error', 'No se pudieron cargar los presupuestos.');
+      mostrarToast('No se pudieron cargar los datos', 'error');
     } finally {
       setCargando(false);
     }
   }
 
-  // Recargar cada vez que el usuario entra a esta pantalla
   useFocusEffect(
     useCallback(() => {
       cargarDatos();
     }, [])
   );
+
+  const mostrarToast = (mensaje, tipo = 'exito') => {
+    setToastMensaje(mensaje);
+    setToastTipo(tipo);
+    toastOpacity.setValue(0);
+    setToastVisible(true);
+    Animated.sequence([
+      Animated.timing(toastOpacity, {
+        toValue: 1, duration: 200, useNativeDriver: true,
+      }),
+      Animated.delay(2000),
+      Animated.timing(toastOpacity, {
+        toValue: 0, duration: 300, useNativeDriver: true,
+      }),
+    ]).start(() => setToastVisible(false));
+  };
+
+  // ──────────────────────────────────────────
+  // Calcular totales generales del mes
+  // ──────────────────────────────────────────
+  const totalPresupuestado = presupuestos.reduce((sum, p) => sum + parseFloat(p.limite), 0);
+  const totalGastado = Object.values(gastosPorCategoria).reduce((sum, v) => sum + v, 0);
+  const porcentajeGeneral = totalPresupuestado > 0
+    ? Math.min(Math.round((totalGastado / totalPresupuestado) * 100), 100)
+    : 0;
+
+  useEffect(() => {
+    if (!cargando && totalPresupuestado > 0) {
+      barraGeneralAnim.setValue(0);
+      Animated.timing(barraGeneralAnim, {
+        toValue: porcentajeGeneral,
+        duration: 900,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [cargando, porcentajeGeneral]);
 
   // ──────────────────────────────────────────
   // Abrir modal para editar/crear presupuesto
@@ -176,7 +241,8 @@ export default function PresupuestoScreen() {
     const limite = parseFloat(limiteInput);
 
     if (!limiteInput || isNaN(limite) || limite <= 0) {
-      Alert.alert('Monto inválido', 'Ingresa un monto mayor a $0');
+      hap.error();
+      mostrarToast('El monto debe ser mayor a $0', 'error');
       return;
     }
 
@@ -184,7 +250,6 @@ export default function PresupuestoScreen() {
       setGuardando(true);
       await guardarPresupuesto(categoriaEditando.dbId, limite, infoPeriodo.mes, infoPeriodo.anio);
 
-      // Actualizar lista local sin recargar todo
       setPresupuestos((prev) => {
         const existe = prev.find((p) => p.categoria_id === categoriaEditando.dbId);
         if (existe) {
@@ -195,10 +260,13 @@ export default function PresupuestoScreen() {
         return [...prev, { categoria_id: categoriaEditando.dbId, limite, mes: infoPeriodo.mes, anio: infoPeriodo.anio }];
       });
 
+      hap.logro();
       setModalVisible(false);
+      setTimeout(() => mostrarToast('Presupuesto guardado'), 300);
     } catch (e) {
       console.error('Error guardando presupuesto:', e);
-      Alert.alert('Error', 'No se pudo guardar el presupuesto.');
+      hap.error();
+      mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
     } finally {
       setGuardando(false);
     }
@@ -209,45 +277,33 @@ export default function PresupuestoScreen() {
   // ──────────────────────────────────────────
   function handleEliminar() {
     const presupuesto = presupuestos.find(
-      (p) => p.categoria_id === categoriaEditando.dbId
+      (p) => p.categoria_id === categoriaEditando?.dbId
     );
     if (!presupuesto) {
       setModalVisible(false);
       return;
     }
-
-    Alert.alert(
-      'Eliminar presupuesto',
-      `¿Eliminar el presupuesto de ${categoriaEditando.nombre}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await eliminarPresupuesto(presupuesto.id);
-              setPresupuestos((prev) =>
-                prev.filter((p) => p.categoria_id !== categoriaEditando.dbId)
-              );
-              setModalVisible(false);
-            } catch (e) {
-              Alert.alert('Error', 'No se pudo eliminar el presupuesto.');
-            }
-          },
-        },
-      ]
-    );
+    hap.advertencia();
+    setModalEliminarVisible(true);
   }
 
-  // ──────────────────────────────────────────
-  // Calcular totales generales del mes
-  // ──────────────────────────────────────────
-  const totalPresupuestado = presupuestos.reduce((sum, p) => sum + parseFloat(p.limite), 0);
-  const totalGastado = Object.values(gastosPorCategoria).reduce((sum, v) => sum + v, 0);
-  const porcentajeGeneral = totalPresupuestado > 0
-    ? Math.min(Math.round((totalGastado / totalPresupuestado) * 100), 100)
-    : 0;
+  async function ejecutarEliminacion() {
+    const presupuesto = presupuestos.find(
+      (p) => p.categoria_id === categoriaEditando?.dbId
+    );
+    try {
+      hap.error();
+      await eliminarPresupuesto(presupuesto.id);
+      setPresupuestos((prev) =>
+        prev.filter((p) => p.categoria_id !== categoriaEditando.dbId)
+      );
+      setModalEliminarVisible(false);
+      setModalVisible(false);
+      setTimeout(() => mostrarToast('Presupuesto eliminado'), 300);
+    } catch (e) {
+      mostrarToast('No se pudo eliminar. Intenta de nuevo.', 'error');
+    }
+  }
 
   // ──────────────────────────────────────────
   // Render principal
@@ -262,6 +318,23 @@ export default function PresupuestoScreen() {
           {infoPeriodo.label} <Text style={styles.rangoTexto}>{infoPeriodo.rango}</Text>
         </Text>
       </View>
+
+      {/* Toast Global */}
+      {toastVisible && (
+        <Animated.View style={[
+          styles.toast,
+          { top: insets.top + 70 },
+          toastTipo === 'error'
+            ? { borderColor: COLORS.error, backgroundColor: '#2A1515' }
+            : { borderColor: COLORS.success, backgroundColor: '#1A2A1A' },
+          { opacity: toastOpacity },
+        ]}>
+          <Text style={{ fontSize: 16 }}>
+            {toastTipo === 'error' ? '❌' : '✅'}
+          </Text>
+          <Text style={styles.toastTexto}>{toastMensaje}</Text>
+        </Animated.View>
+      )}
 
       {cargando ? (
         <View style={styles.contenedorCarga}>
@@ -289,11 +362,14 @@ export default function PresupuestoScreen() {
                 </Text>
               </View>
               <View style={styles.barraBg}>
-                <View
+                <Animated.View
                   style={[
                     styles.barraRelleno,
                     {
-                      width: `${porcentajeGeneral}%`,
+                      width: barraGeneralAnim.interpolate({
+                        inputRange: [0, 100],
+                        outputRange: ['0%', '100%'],
+                      }),
                       backgroundColor: porcentajeGeneral >= 100 ? COLORS.error
                         : porcentajeGeneral >= 80 ? COLORS.warning
                         : COLORS.primary,
@@ -318,46 +394,59 @@ export default function PresupuestoScreen() {
             const superado = tieneLimite && gastado > limite;
 
             return (
-              <Pressable
-                key={categoria.id}
-                style={[
-                  styles.tarjetaCategoria,
-                  superado && styles.tarjetaSuperada,
-                ]}
-                onPress={() => abrirModal(categoria)}
-              >
-                {/* Ícono y nombre */}
-                <View style={styles.categoriaIzquierda}>
-                  <View style={[styles.iconoContenedor, { backgroundColor: categoria.color + '25' }]}>
-                    <Text style={styles.icono}>{categoria.icono}</Text>
+              <View key={categoria.id} style={styles.tarjetaWrapper}>
+                <Pressable
+                  style={[
+                    styles.tarjetaCategoria,
+                    superado && styles.tarjetaSuperada,
+                    tieneLimite && styles.tarjetaConBarra,
+                  ]}
+                  onPress={() => { hap.suave(); abrirModal(categoria); }}
+                >
+                  {/* Ícono y nombre */}
+                  <View style={styles.categoriaIzquierda}>
+                    <View style={[styles.iconoContenedor, { backgroundColor: categoria.color + '25' }]}>
+                      <Text style={styles.icono}>{categoria.icono}</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.categoriaNombre}>{categoria.nombre}</Text>
+                      {tieneLimite ? (
+                        <Text style={styles.categoriaDetalle}>
+                          {formatMXN(gastado)} de {formatMXN(limite)}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.categoriaDetalle, { color: COLORS.primary }]}>
+                          Toca para fijar límite
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.categoriaNombre}>{categoria.nombre}</Text>
-                    {tieneLimite ? (
-                      <Text style={styles.categoriaDetalle}>
-                        {formatMXN(gastado)} de {formatMXN(limite)}
-                      </Text>
-                    ) : (
-                      <Text style={[styles.categoriaDetalle, { color: COLORS.primary }]}>
-                        Toca para fijar límite
-                      </Text>
-                    )}
-                  </View>
-                </View>
 
-                {/* Lado derecho: ícono de alerta o chevron */}
-                <View style={styles.categoriaDerecha}>
-                  {superado && (
-                    <Ionicons name="warning" size={16} color={COLORS.error} style={{ marginRight: 6 }} />
-                  )}
-                  <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
-                </View>
-              </Pressable>
+                  {/* Lado derecho: ícono de alerta o chevron */}
+                  <View style={styles.categoriaDerecha}>
+                    {superado && (
+                      <Ionicons name="warning" size={16} color={COLORS.error} style={{ marginRight: 6 }} />
+                    )}
+                    <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+                  </View>
+                </Pressable>
+
+                {/* Barra integrada en la parte inferior de la tarjeta */}
+                {tieneLimite && (
+                  <View style={[
+                    styles.barraIntegrada,
+                    superado && { borderTopWidth: 0, borderColor: COLORS.error + '60' },
+                  ]}>
+                    <BarraPresupuesto
+                      gastado={gastado}
+                      limite={limite}
+                      delay={CATEGORIAS.indexOf(categoria) * 60}
+                    />
+                  </View>
+                )}
+              </View>
             );
           })}
-
-          {/* Barra de progreso debajo de cada categoría con presupuesto */}
-          {/* (se renderiza fuera del map para mejor control visual) */}
 
           <View style={{ height: 75 }} />
         </ScrollView>
@@ -450,6 +539,44 @@ export default function PresupuestoScreen() {
         </Pressable>
       </Modal>
 
+      {/* Modal Confirmación Eliminación */}
+      <Modal
+        visible={modalEliminarVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalEliminarVisible(false)}
+      >
+        <Pressable
+          style={styles.modalEliminarOverlay}
+          onPress={() => setModalEliminarVisible(false)}
+        >
+          <Pressable style={styles.modalEliminarContenedor} onPress={() => {}}>
+            <View style={styles.modalEliminarIcono}>
+              <Text style={{ fontSize: 32 }}>🗑️</Text>
+            </View>
+            <Text style={styles.modalEliminarTitulo}>Eliminar presupuesto</Text>
+            <Text style={styles.modalEliminarMensaje}>
+              Esta acción no se puede deshacer.{'\n'}
+              ¿Eliminar el presupuesto de {categoriaEditando?.nombre}?
+            </Text>
+            <View style={styles.modalEliminarBotones}>
+              <Pressable
+                style={styles.modalEliminarBtnCancelar}
+                onPress={() => { hap.suave(); setModalEliminarVisible(false); }}
+              >
+                <Text style={styles.modalEliminarBtnCancelarTxt}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalEliminarBtnConfirmar}
+                onPress={ejecutarEliminacion}
+              >
+                <Text style={styles.modalEliminarBtnConfirmarTxt}>Eliminar</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
     </View>
   );
 }
@@ -529,19 +656,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  tarjetaWrapper: {
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
   // Tarjeta de categoría
   tarjetaCategoria: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
     padding: 14,
-    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  tarjetaConBarra: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
   tarjetaSuperada: {
     borderWidth: 1,
     borderColor: COLORS.error + '60',
+  },
+  barraIntegrada: {
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   categoriaIzquierda: {
     flexDirection: 'row',
@@ -578,28 +718,108 @@ const styles = StyleSheet.create({
   barraContenedor: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
+    gap: 10,
   },
   barraBg: {
     flex: 1,
-    height: 6,
+    height: 8,
     backgroundColor: COLORS.border,
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   barraRelleno: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
   },
   baraPorcentaje: {
     fontSize: 12,
-    fontWeight: '600',
-    minWidth: 36,
+    fontWeight: '700',
+    minWidth: 38,
     textAlign: 'right',
   },
 
-  // Modal
+  // Toast
+  toast: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    zIndex: 999,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  toastTexto: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Modal eliminación
+  modalEliminarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  modalEliminarContenedor: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalEliminarIcono: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.error + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalEliminarTitulo: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  modalEliminarMensaje: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalEliminarBotones: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalEliminarBtnCancelar: {
+    flex: 1, height: 48, borderRadius: 12,
+    borderWidth: 1.5, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalEliminarBtnCancelarTxt: {
+    fontSize: 15, fontWeight: '600', color: COLORS.textSecondary,
+  },
+  modalEliminarBtnConfirmar: {
+    flex: 1, height: 48, borderRadius: 12,
+    backgroundColor: COLORS.error,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalEliminarBtnConfirmarTxt: {
+    fontSize: 15, fontWeight: '700', color: '#fff',
+  },
+
+  // Modal general
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
