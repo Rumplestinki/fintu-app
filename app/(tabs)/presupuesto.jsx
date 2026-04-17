@@ -394,7 +394,7 @@ export default function PresupuestoScreen() {
             const superado = tieneLimite && gastado > limite;
 
             return (
-              <View key={categoria.id} style={styles.tarjetaWrapper}>
+              <View key={categoria.id} style={[styles.tarjetaWrapper, superado && styles.tarjetaWrapperSuperado]}>
                 <Pressable
                   style={[
                     styles.tarjetaCategoria,
@@ -660,6 +660,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 12,
     overflow: 'hidden',
+    overflow: 'hidden',
   },
 
   // Tarjeta de categoría
@@ -675,8 +676,6 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   tarjetaSuperada: {
-    borderWidth: 1,
-    borderColor: COLORS.error + '60',
   },
   barraIntegrada: {
     backgroundColor: COLORS.surface,
@@ -763,6 +762,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
+
+  tarjetaWrapperSuperado: {
+    borderWidth: 1,
+    borderColor: COLORS.error + '60',
+    borderRadius: 12,
+},
 
   // Modal eliminación
   modalEliminarOverlay: {
