@@ -27,6 +27,7 @@ import { supabase } from '../../services/supabase';
 import BotonVoz from '../../components/BotonVoz';
 import AlertaPresupuesto from '../../components/AlertaPresupuesto';
 import { verificarPresupuestos } from '../../services/notificaciones';
+import BotonFintu from '../../components/BotonFintu';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -446,9 +447,11 @@ export default function Dashboard() {
         </ScrollView>
       {/* ── BOTONES FLOTANTES ── */}
       <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
-        <TouchableOpacity style={estilos.botonAgregar} onPress={() => { hap.suave(); router.push('/(tabs)/agregar'); }}>
-          <Text style={estilos.botonTexto}>+ Agregar gasto</Text>
-        </TouchableOpacity>
+        <BotonFintu
+          label="+ Agregar gasto"
+          onPress={() => router.push('/(tabs)/agregar')}
+          estilo={{ flex: 1 }}
+        />
         <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => { hap.guardar(); setModalVozVisible(true); }}>
           <Text style={estilos.btnVozEmoji}>🎙️</Text>
         </TouchableOpacity>

@@ -91,13 +91,36 @@ export default function HistorialScreen() {
 
   // Estados de filtros
   const [periodoActivoId, setPeriodoActivoId] = useState('actual');
-  const [categoriaActiva, setCategoriaActiva] = useState('todas'); // puede ser 'todas' o un dbId (número)
+  const [categoriaActiva, setCategoriaActiva] = useState('todas');
   const [busqueda, setBusqueda] = useState('');
 
   // Estados de UI
   const [modalPeriodoVisible, setModalPeriodoVisible] = useState(false);
-  const [modalEdicionVisible, setModalEdicionVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
   const [gastoEditando, setGastoEditando] = useState(null);
+  
+  // Estados de inputs edición
+  const [montoInput, setMontoInput] = useState('');
+  const [categoriaInput, setCategoriaInput] = useState(null);
+  const [descripcionInput, setDescripcionInput] = useState('');
+  const [fechaInput, setFechaInput] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  // Estados de eliminación
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
+  const [gastoAEliminar, setGastoAEliminar] = useState(null);
+
+  // Estados de Toast Interno (Modal)
+  const [toastModalMensaje, setToastModalMensaje] = useState('');
+  const [toastModalVisible, setToastModalVisible] = useState(false);
+  const [toastModalTipo, setToastModalTipo] = useState('error');
+  const toastModalOpacity = useRef(new Animated.Value(0)).current;
+
+  // Estados de Toast Global (Pantalla)
+  const [toastGlobalMensaje, setToastGlobalMensaje] = useState('');
+  const [toastGlobalVisible, setToastGlobalVisible] = useState(false);
+  const [toastGlobalTipo, setToastGlobalTipo] = useState('exito');
+  const toastGlobalOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Cargar Gastos desde Supabase ──
   async function cargarGastos() {
@@ -105,7 +128,6 @@ export default function HistorialScreen() {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
 
-      // 1. Obtener día de corte
       const { data: perfil } = await supabase
         .from('users')
         .select('dia_corte')
@@ -115,7 +137,6 @@ export default function HistorialScreen() {
       const corte = perfil?.dia_corte || 1;
       setDiaCorte(corte);
 
-      // 2. Determinar qué periodo cargar
       let data = [];
       if (periodoActivoId === 'todo') {
         data = await obtenerTodosLosGastos(user.id);
@@ -142,27 +163,21 @@ export default function HistorialScreen() {
 
   // ── Filtrado y Agrupación ──
   const secciones = useMemo(() => {
-    // 1. Filtrar por categoría y búsqueda
     let filtrados = gastosRaw.filter((g) => {
-      // FIX: Comparar contra el dbId numérico o contra 'todas'
       const matchCat = categoriaActiva === 'todas' || Number(g.categoria_id) === Number(categoriaActiva);
-      
       const matchBusqueda = !busqueda || 
         (g.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
         getCategoriaByDbId(g.categoria_id).nombre.toLowerCase().includes(busqueda.toLowerCase());
-      
       return matchCat && matchBusqueda;
     });
 
-    // 2. Agrupar por fecha para SectionList
     const grupos = filtrados.reduce((acc, g) => {
-      const fecha = g.fecha; // 'YYYY-MM-DD'
+      const fecha = g.fecha;
       if (!acc[fecha]) acc[fecha] = [];
       acc[fecha].push(g);
       return acc;
     }, {});
 
-    // 3. Convertir a array de secciones ordenado
     return Object.keys(grupos)
       .sort((a, b) => b.localeCompare(a))
       .map((fecha) => ({
@@ -174,49 +189,105 @@ export default function HistorialScreen() {
   // ── Acciones de Gasto ──
   function abrirEdicion(gasto) {
     hap.suave();
-    setGastoEditando({
-      ...gasto,
-      monto: String(gasto.monto),
-    });
-    setModalEdicionVisible(true);
+    setGastoEditando(gasto);
+    setMontoInput(String(gasto.monto));
+    setCategoriaInput(getCategoriaByDbId(gasto.categoria_id));
+    setDescripcionInput(gasto.descripcion || '');
+    setFechaInput(gasto.fecha);
+    setModalVisible(true);
   }
+
+  const mostrarToastModal = (mensaje, tipo = 'error') => {
+    setToastModalMensaje(mensaje);
+    setToastModalTipo(tipo);
+    toastModalOpacity.setValue(0);
+    setToastModalVisible(true);
+    Animated.sequence([
+      Animated.timing(toastModalOpacity, {
+        toValue: 1, duration: 200, useNativeDriver: true,
+      }),
+      Animated.delay(1800),
+      Animated.timing(toastModalOpacity, {
+        toValue: 0, duration: 300, useNativeDriver: true,
+      }),
+    ]).start(() => setToastModalVisible(false));
+  };
+
+  const mostrarToastGlobal = (mensaje, tipo = 'exito') => {
+    setToastGlobalMensaje(mensaje);
+    setToastGlobalTipo(tipo);
+    toastGlobalOpacity.setValue(0);
+    setToastGlobalVisible(true);
+    Animated.sequence([
+      Animated.timing(toastGlobalOpacity, {
+        toValue: 1, duration: 200, useNativeDriver: true,
+      }),
+      Animated.delay(2000),
+      Animated.timing(toastGlobalOpacity, {
+        toValue: 0, duration: 300, useNativeDriver: true,
+      }),
+    ]).start(() => setToastGlobalVisible(false));
+  };
 
   async function handleGuardarEdicion() {
-    hap.guardar();
-    if (!gastoEditando.monto || parseFloat(gastoEditando.monto) <= 0) {
-      Alert.alert('Error', 'Monto inválido');
+    const monto = parseFloat(montoInput);
+    if (!montoInput || isNaN(monto) || monto <= 0) {
+      hap.error();
+      mostrarToastModal('El monto debe ser mayor a $0');
       return;
     }
-
+    if (!categoriaInput) {
+      hap.error();
+      mostrarToastModal('Selecciona una categoría');
+      return;
+    }
     try {
-      setCargando(true);
-      await actualizarGasto(gastoEditando.id, {
-        monto: parseFloat(gastoEditando.monto),
-        descripcion: gastoEditando.descripcion,
-        categoria_id: gastoEditando.categoria_id,
+      setGuardando(true);
+      const actualizado = await actualizarGasto(gastoEditando.id, {
+        monto,
+        categoria_id: categoriaInput.dbId,
+        descripcion: descripcionInput,
+        fecha: fechaInput,
       });
-      setModalEdicionVisible(false);
-      cargarGastos();
+      setGastosRaw((prev) =>
+        prev.map((g) => g.id === gastoEditando.id ? { ...g, ...actualizado } : g)
+      );
+      hap.logro();
+      setModalVisible(false);          // cerrar inmediatamente
+      setTimeout(() => {
+        mostrarToastGlobal('Gasto actualizado correctamente', 'exito');
+      }, 300);  
     } catch (e) {
-      Alert.alert('Error', 'No se pudo actualizar');
+      console.error('Error actualizando gasto:', e);
+      hap.error();
+      mostrarToastModal('No se pudo actualizar el gasto');
     } finally {
-      setCargando(false);
+      setGuardando(false);
     }
   }
 
-  function handleEliminarConfirmar(gastoId) {
-    Alert.alert('Eliminar gasto', '¿Estás seguro de que quieres borrar este registro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { 
-        text: 'Eliminar', 
-        style: 'destructive', 
-        onPress: async () => {
-          hap.error();
-          await eliminarGasto(gastoId);
-          cargarGastos();
-        } 
-      },
-    ]);
+  function confirmarEliminacion(gastoId) {
+    hap.advertencia();
+    setGastoAEliminar(gastoId);
+    setModalEliminarVisible(true);
+  }
+
+  async function ejecutarEliminacion() {
+    if (!gastoAEliminar) return;
+    try {
+      hap.error();
+      await eliminarGasto(gastoAEliminar);
+      setGastosRaw((prev) => prev.filter((g) => g.id !== gastoAEliminar));
+      setModalEliminarVisible(false);
+      setModalVisible(false);
+      setGastoAEliminar(null);
+      // Toast global - se muestra después de cerrar los modales
+      setTimeout(() => {
+        mostrarToastGlobal('Gasto eliminado', 'exito');
+      }, 300);
+    } catch (e) {
+      mostrarToastGlobal('No se pudo eliminar el gasto', 'error');
+    }
   }
 
   // ── Render Helpers ──
@@ -261,6 +332,23 @@ export default function HistorialScreen() {
           <Ionicons name="refresh-outline" size={24} color={COLORS.textSecondary} />
         </Pressable>
       </View>
+
+      {/* ── Toast Global ── */}
+      {toastGlobalVisible && (
+        <Animated.View style={[
+          styles.toastGlobal,
+          { top: insets.top + 70 },
+          toastGlobalTipo === 'error'
+            ? { borderColor: COLORS.error, backgroundColor: '#2A1515' }
+            : { borderColor: COLORS.success, backgroundColor: '#1A2A1A' },
+          { opacity: toastGlobalOpacity },
+        ]}>
+          <Text style={{ fontSize: 16 }}>
+            {toastGlobalTipo === 'error' ? '❌' : '✅'}
+          </Text>
+          <Text style={styles.toastGlobalTexto}>{toastGlobalMensaje}</Text>
+        </Animated.View>
+      )}
 
       {/* ── Filtros ── */}
       <View style={styles.filtros}>
@@ -351,74 +439,165 @@ export default function HistorialScreen() {
       </Modal>
 
       {/* ── Modal de Edición ── */}
-      <Modal visible={modalEdicionVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.overlayEdicion}
         >
           <View style={styles.modalEdicion}>
-            <View style={styles.handle} />
-            <View style={styles.edicionHeader}>
-              <Text style={styles.edicionTitulo}>Editar gasto</Text>
-              <Pressable onPress={() => handleEliminarConfirmar(gastoEditando.id)}>
+            <View style={styles.modalManija} />
+            
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTituloEdicion}>Editar gasto</Text>
+              <Pressable
+                onPress={() => confirmarEliminacion(gastoEditando?.id)}
+                style={styles.modalBtnEliminarHeader}
+                hitSlop={8}
+              >
                 <Ionicons name="trash-outline" size={22} color={COLORS.error} />
               </Pressable>
             </View>
 
+            {categoriaInput && (
+              <View style={styles.categoriaActivaFila}>
+                <Text style={styles.categoriaActivaEmoji}>{categoriaInput.icono}</Text>
+                <Text style={[styles.categoriaActivaNombre, { color: categoriaInput.color }]}>
+                  {categoriaInput.nombre}
+                </Text>
+              </View>
+            )}
+
             {gastoEditando && (
-              <ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled">
                 <Text style={styles.label}>Monto</Text>
                 <View style={styles.inputMontoRow}>
                   <Text style={styles.prefijoMonto}>$</Text>
                   <TextInput
                     style={styles.inputMonto}
                     keyboardType="numeric"
-                    value={gastoEditando.monto}
-                    onChangeText={(t) => setGastoEditando({...gastoEditando, monto: t})}
+                    value={montoInput}
+                    onChangeText={setMontoInput}
                   />
                 </View>
 
                 <Text style={styles.label}>Descripción</Text>
                 <TextInput
                   style={styles.inputDesc}
-                  value={gastoEditando.descripcion}
-                  onChangeText={(t) => setGastoEditando({...gastoEditando, descripcion: t})}
+                  value={descripcionInput}
+                  onChangeText={setDescripcionInput}
+                  placeholder="Sin descripción"
+                  placeholderTextColor={COLORS.textMuted}
                 />
 
-                <Text style={styles.label}>Categoría</Text>
-                <View style={styles.gridCategoriasEdicion}>
-                  {CATEGORIAS.map(cat => (
-                    <Pressable 
+                <Text style={styles.label}>Seleccionar categoría</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoriasModalScroll}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {CATEGORIAS.map((cat) => (
+                    <Pressable
                       key={cat.id}
+                      onPress={() => { hap.suave(); setCategoriaInput(cat); }}
                       style={[
-                        styles.catEdicionBtn,
-                        gastoEditando.categoria_id === cat.dbId && { borderColor: cat.color, backgroundColor: cat.color + '20' }
+                        styles.categoriaChipModal,
+                        categoriaInput?.id === cat.id && {
+                          backgroundColor: cat.color + '25',
+                          borderColor: cat.color,
+                        },
                       ]}
-                      onPress={() => setGastoEditando({...gastoEditando, categoria_id: cat.dbId})}
                     >
-                      <Text style={{ fontSize: 20 }}>{cat.icono}</Text>
+                      <Text style={styles.categoriaChipModalEmoji}>{cat.icono}</Text>
+                      <Text style={[
+                        styles.categoriaChipModalTexto,
+                        categoriaInput?.id === cat.id && {
+                          color: cat.color,
+                          fontWeight: '600',
+                        },
+                      ]}>
+                        {cat.nombre}
+                      </Text>
                     </Pressable>
                   ))}
-                </View>
+                </ScrollView>
 
-                <View style={styles.edicionBotones}>
+                <View style={styles.modalBotones}>
                   <Pressable 
-                    style={styles.btnCancelar} 
-                    onPress={() => setModalEdicionVisible(false)}
+                    style={styles.botonCancelar} 
+                    onPress={() => setModalVisible(false)}
                   >
-                    <Text style={styles.btnCancelarTxt}>Cancelar</Text>
+                    <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                   </Pressable>
                   <Pressable 
-                    style={styles.btnGuardar} 
+                    style={styles.botonGuardar} 
                     onPress={handleGuardarEdicion}
+                    disabled={guardando}
                   >
-                    <Text style={styles.btnGuardarTxt}>Guardar</Text>
+                    {guardando ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.botonGuardarTexto}>Guardar</Text>
+                    )}
                   </Pressable>
                 </View>
               </ScrollView>
             )}
           </View>
+
+          {/* Toast Interno - Fuera de modalEdicion para evitar recortes */}
+          {toastModalVisible && (
+            <Animated.View style={[
+              styles.toastModal,
+              toastModalTipo === 'error'
+                ? { borderColor: COLORS.error, backgroundColor: '#2A1515' }
+                : { borderColor: COLORS.success, backgroundColor: '#1A2A1A' },
+              { opacity: toastModalOpacity },
+            ]}>
+              <Text style={{ fontSize: 16 }}>
+                {toastModalTipo === 'error' ? '❌' : '✅'}
+              </Text>
+              <Text style={styles.toastModalTexto}>{toastModalMensaje}</Text>
+            </Animated.View>
+          )}
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Modal Confirmación Eliminación ── */}
+      <Modal
+        visible={modalEliminarVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalEliminarVisible(false)}
+      >
+        <Pressable
+          style={styles.modalEliminarOverlay}
+          onPress={() => setModalEliminarVisible(false)}
+        >
+          <Pressable style={styles.modalEliminarContenedor} onPress={() => {}}>
+            <View style={styles.modalEliminarIcono}>
+              <Text style={{ fontSize: 32 }}>🗑️</Text>
+            </View>
+            <Text style={styles.modalEliminarTitulo}>Eliminar gasto</Text>
+            <Text style={styles.modalEliminarMensaje}>
+              Esta acción no se puede deshacer.{'\n'}¿Confirmas que quieres eliminarlo?
+            </Text>
+            <View style={styles.modalEliminarBotones}>
+              <Pressable
+                style={styles.modalEliminarBtnCancelar}
+                onPress={() => { hap.suave(); setModalEliminarVisible(false); }}
+              >
+                <Text style={styles.modalEliminarBtnCancelarTxt}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalEliminarBtnConfirmar}
+                onPress={ejecutarEliminacion}
+              >
+                <Text style={styles.modalEliminarBtnConfirmarTxt}>Eliminar</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
     </View>
@@ -495,20 +674,171 @@ const styles = StyleSheet.create({
   btnRapidoTxtActivo: { color: COLORS.primary, fontWeight: '700' },
 
   overlayEdicion: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalEdicion: { backgroundColor: COLORS.surface, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, paddingBottom: 40, maxHeight: '90%' },
-  handle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  edicionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
-  edicionTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary },
-  label: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 10, textTransform: 'uppercase' },
-  inputMontoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+  modalEdicion: { backgroundColor: COLORS.surface, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, paddingBottom: 40, maxHeight: '95%' },
+  modalManija: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  modalTituloEdicion: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary },
+  modalBtnEliminarHeader: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.error + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  categoriaActivaFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.background,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  categoriaActivaEmoji: { fontSize: 14 },
+  categoriaActivaNombre: { fontSize: 13, fontWeight: '600' },
+
+  label: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 10, textTransform: 'uppercase', marginTop: 10 },
+  inputMontoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   prefijoMonto: { fontSize: 30, fontWeight: '700', color: COLORS.textPrimary, marginRight: 5 },
   inputMonto: { fontSize: 40, fontWeight: '700', color: COLORS.primary, flex: 1 },
-  inputDesc: { backgroundColor: COLORS.background, borderRadius: 12, padding: 15, color: COLORS.textPrimary, fontSize: 16, marginBottom: 25, borderWidth: 1, borderColor: COLORS.border },
-  gridCategoriasEdicion: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 30 },
-  catEdicionBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
-  edicionBotones: { flexDirection: 'row', gap: 15 },
-  btnCancelar: { flex: 1, paddingVertical: 15, borderRadius: 15, alignItems: 'center', backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border },
-  btnCancelarTxt: { color: COLORS.textSecondary, fontWeight: '600' },
-  btnGuardar: { flex: 2, paddingVertical: 15, borderRadius: 15, alignItems: 'center', backgroundColor: COLORS.primary },
-  btnGuardarTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  inputDesc: { backgroundColor: COLORS.background, borderRadius: 12, padding: 15, color: COLORS.textPrimary, fontSize: 16, marginBottom: 20, borderWidth: 1.5, borderColor: COLORS.border },
+  
+  categoriasModalScroll: {
+    paddingBottom: 12,
+    paddingRight: 8,
+    gap: 8,
+  },
+  categoriaChipModal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    marginRight: 8,
+  },
+  categoriaChipModalEmoji: { fontSize: 16 },
+  categoriaChipModalTexto: { fontSize: 13, fontWeight: '500', color: COLORS.textSecondary },
+
+  modalBotones: { flexDirection: 'row', gap: 12, marginTop: 30 },
+  botonCancelar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  botonCancelarTexto: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '600' },
+  botonGuardar: { flex: 2, height: 48, borderRadius: 12, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
+  botonGuardarTexto: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  // Toast Styles
+  toastModal: {
+    position: 'absolute',
+    bottom: 680,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    zIndex: 999,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  toastModalTexto: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
+
+  toastGlobal: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    zIndex: 999,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  toastGlobalTexto: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Eliminación Modal Styles
+  modalEliminarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  modalEliminarContenedor: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalEliminarIcono: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.error + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalEliminarTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
+  modalEliminarMensaje: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  modalEliminarBotones: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalEliminarBtnCancelar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalEliminarBtnCancelarTxt: { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
+  modalEliminarBtnConfirmar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalEliminarBtnConfirmarTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

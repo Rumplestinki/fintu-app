@@ -22,6 +22,7 @@ import { registrarGasto as crearGasto } from '../../services/gastos';
 import { useAuth } from '../../hooks/useAuth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { verificarPresupuestos } from '../../services/notificaciones';
+import BotonFintu from '../../components/BotonFintu';
 
 // ─── HELPERS ──────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ export default function AgregarGasto() {
 
   // ── Guardar gasto ──
   const handleGuardar = async () => {
-    hap.guardar();
+    // hap.guardar() se eliminó de aquí porque BotonFintu lo maneja al tocar
 
     if (!monto || parseFloat(monto) === 0) {
       hap.error();
@@ -353,24 +354,14 @@ export default function AgregarGasto() {
           )}
         </View>
 
-        {/* ── Botón Guardar ── */}
-        <TouchableOpacity
-          style={[
-            estilos.btnGuardar,
-            (!monto || !categoriaSeleccionada) && estilos.btnGuardarDeshabilitado,
-          ]}
+        {/* ── Botón Guardar Premium ── */}
+        <BotonFintu
+          label={monto && categoriaSeleccionada ? `Guardar $${monto}` : 'Guardar gasto'}
           onPress={handleGuardar}
-          disabled={guardando || !monto || !categoriaSeleccionada}
-          activeOpacity={0.85}
-        >
-          {guardando ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={estilos.btnGuardarTxt}>
-              {monto && categoriaSeleccionada ? `Guardar $${monto}` : 'Guardar gasto'}
-            </Text>
-          )}
-        </TouchableOpacity>
+          deshabilitado={!monto || !categoriaSeleccionada}
+          cargando={guardando}
+          estilo={{ marginHorizontal: 20, marginTop: 8 }}
+        />
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -385,7 +376,7 @@ const estilos = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 80,
   },
 
   // Toast
@@ -605,7 +596,7 @@ const estilos = StyleSheet.create({
     fontSize: 13,
   },
 
-  // Botón guardar
+  // Botón guardar (se conservan estilos por si acaso, aunque BotonFintu usa los suyos)
   btnGuardar: {
     marginHorizontal: 20,
     marginTop: 8,
