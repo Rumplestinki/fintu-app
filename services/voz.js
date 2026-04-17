@@ -102,19 +102,68 @@ PASO 3 — CLASIFICAR CATEGORÍA
 ════════════───────────────────
 Elige UNA categoría: ${LISTA_CATEGORIAS}
 
-REGLAS DE CLASIFICACIÓN (ejemplos comunes en México):
-🚗 transporte: Uber, Didi, gasolina, camión, metro, casetas.
-🍔 comida: tacos, restaurante, despensa, Walmart, Oxxo, super.
-🏠 renta: renta, hipoteca, mantenimiento.
-🎬 entretenimiento: cine, bar, fiesta, videojuegos, Spotify.
-💊 salud: doctor, farmacia, medicinas, gym.
-📚 educacion: colegiatura, libros, cursos.
-💡 servicios: luz (CFE), agua, internet, plan celular.
-📱 suscripciones: Netflix, Amazon Prime, Disney+.
-🏡 hogar: muebles, reparaciones, Amazon, Liverpool.
-👕 ropa: Zara, tenis, ropa, accesorios.
-🐾 mascotas: veterinario, croquetas.
-📦 otros: regalos, viajes, imprevistos.
+REGLAS DE CLASIFICACIÓN — Lee cuidadosamente antes de clasificar:
+
+🍔 comida: SOLO si es algo que se COME o BEBE.
+  SÍ: tacos, restaurante, Oxxo (comida), Starbucks, despensa, super,
+      Walmart (comida), McDonald's, pizza, café, agua, refresco, frituras.
+  NO: si es cualquier otra cosa comprada en esos lugares.
+
+🚗 transporte: moverse de un lugar a otro o pagar por ello.
+  SÍ: Uber, Didi, gasolina, camión, metro, taxi, casetas, estacionamiento,
+      Cabify, Beat, verificación vehicular, tenencia.
+
+🏠 renta: pagos relacionados con vivir en un lugar.
+  SÍ: renta, hipoteca, predial, mantenimiento del edificio o fraccionamiento.
+
+🏡 hogar: artículos o servicios PARA la casa (no la renta en sí).
+  SÍ: foco, lámpara, pila, escoba, detergente, cloro, papel de baño,
+      muebles, colchón, televisión, licuadora, sartén, maceta, cortina,
+      herramientas, pintura para pared, plomero, electricista, IKEA,
+      Home Depot, Sodimac, The Home Depot, artículos de limpieza.
+
+🎬 entretenimiento: diversión, cultura, deporte como espectador.
+  SÍ: cine, bar, antro, concierto, fiesta, videojuegos, Steam, PlayStation,
+      Xbox, boliche, karaoke, parque de diversiones.
+
+💊 salud: cuerpo y bienestar físico.
+  SÍ: doctor, hospital, farmacia, medicamentos, vitaminas, lentes,
+      dentista, psicólogo, gym, yoga, CrossFit, Farmacias del Ahorro,
+      Farmacia Guadalajara, similares.
+
+📚 educacion: aprender algo.
+  SÍ: colegiatura, libros, cursos online, Udemy, Coursera, útiles escolares,
+      universidad, clases particulares, Duolingo (suscripción educativa).
+
+💡 servicios: servicios básicos del hogar facturados mensualmente.
+  SÍ: luz (CFE), agua (SACMEX, SAPAS), gas, internet (Telmex, Izzi, Totalplay),
+      plan de celular (Telcel, AT&T, Movistar), teléfono fijo.
+
+📱 suscripciones: pagos recurrentes de plataformas digitales.
+  SÍ: Netflix, Spotify, Disney+, Amazon Prime, HBO Max, Apple TV,
+      YouTube Premium, iCloud, Google One, Notion, ChatGPT Plus,
+      Adobe, Microsoft 365, antivirus, VPN.
+
+👕 ropa: vestir el cuerpo.
+  SÍ: ropa, tenis, zapatos, bolsa, cinturón, accesorios de moda,
+      Zara, H&M, Pull&Bear, Liverpool (ropa), Nike, Adidas, Shein.
+
+🐾 mascotas: gastos relacionados con animales.
+  SÍ: veterinario, medicamento para mascotas, croquetas, arena para gato,
+      correa, juguete para mascota, estética canina, Pet Food.
+
+📦 otros: solo si genuinamente no encaja en ninguna categoría anterior.
+  SÍ: regalo, viaje (boleto de avión, hotel), seguro, inversión,
+      multa, donación, trámites (IMSS, SAT), artículo muy específico
+      que no encaja en nada.
+
+TRUCO CRÍTICO: Si mencionan un OBJETO FÍSICO que se usa en casa
+(foco, pila, escoba, sartén, mueble, electrodoméstico, herramienta)
+→ SIEMPRE es 🏡 hogar, aunque lo hayan comprado en Walmart o Oxxo.
+
+Si mencionan algo de VESTIR → 👕 ropa.
+Si mencionan PLATAFORMA DIGITAL de entretenimiento → 📱 suscripciones.
+Si mencionan PLATAFORMA DIGITAL de herramienta/trabajo → 📱 suscripciones.
 
 ═══════════════════════════════
 PASO 4 — DESCRIPCIÓN
