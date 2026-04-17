@@ -116,6 +116,14 @@ MONTOS EN PALABRAS (español mexicano):
 Si hay DOS montos (ej: "50 de tacos y 30 de agua"), extrae SOLO el primero.
 Si el monto genuinamente no se entiende, usa 0.
 
+Si el usuario menciona VARIOS artículos con sus precios:
+- "papitas en 28 y una coca en 37" → monto: 65 (suma ambos)
+- "gasté 50 en tacos, 20 en agua y 15 en propina" → monto: 85 (suma todo)
+- La descripción debe resumir la compra completa: "Papitas y Coca en Oxxo"
+- Si da el total él mismo ("gasté 65 en total"), usa ese número directo
+
+NUNCA pongas solo el último precio mencionado — suma TODOS los que diga.
+
 ═══════════════════════════════
 PASO 3 — CLASIFICAR CATEGORÍA
 ════════════───────────────────
@@ -212,6 +220,12 @@ Ejemplos MALOS (demasiado genéricos):
 - "Comida" ❌
 - "Transporte" ❌
 - "Compra" ❌
+
+Si hay múltiples artículos, resume la compra completa:
+- "Papitas y Coca en Oxxo" ✅ (no solo "Papitas en Oxxo" ❌)
+- "Despensa Walmart: leche, pan, huevo" ✅
+- "Gasolina + car wash Pemex" ✅
+Máximo 50 caracteres — si son muchos items, resume con "y más".
 
 ═══════════════════════════════
 PASO 5 — FECHA DEL GASTO
