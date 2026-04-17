@@ -88,20 +88,6 @@ CREATE TABLE public.categorias (
   es_default boolean DEFAULT true,
   CONSTRAINT categorias_pkey PRIMARY KEY (id)
 );
-
-CREATE TABLE public.users (
-  id uuid NOT NULL,
-  email text NOT NULL,
-  nombre text,
-  avatar_url text,
-  moneda text DEFAULT 'MXN'::text,
-  created_at timestamp with time zone DEFAULT now(),
-  ingreso_mensual numeric DEFAULT 0,
-  dia_corte integer DEFAULT 1 CHECK (dia_corte >= 1 AND dia_corte <= 28),
-  CONSTRAINT users_pkey PRIMARY KEY (id),
-  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
-);
-
 CREATE TABLE public.gastos (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -115,7 +101,18 @@ CREATE TABLE public.gastos (
   CONSTRAINT gastos_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
   CONSTRAINT gastos_categoria_id_fkey FOREIGN KEY (categoria_id) REFERENCES public.categorias(id)
 );
-
+CREATE TABLE public.metas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  nombre text NOT NULL,
+  monto_objetivo numeric NOT NULL,
+  monto_actual numeric DEFAULT 0,
+  fecha_limite date,
+  completada boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT metas_pkey PRIMARY KEY (id),
+  CONSTRAINT metas_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.presupuestos (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -128,18 +125,23 @@ CREATE TABLE public.presupuestos (
   CONSTRAINT presupuestos_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
   CONSTRAINT presupuestos_categoria_id_fkey FOREIGN KEY (categoria_id) REFERENCES public.categorias(id)
 );
-
-CREATE TABLE public.metas (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  nombre text NOT NULL,
-  monto_objetivo numeric NOT NULL,
-  monto_actual numeric DEFAULT 0,
-  fecha_limite date,
-  completada boolean DEFAULT false,
+CREATE TABLE public.users (
+  id uuid NOT NULL,
+  email text NOT NULL,
+  nombre text,
+  avatar_url text,
+  moneda text DEFAULT 'MXN'::text,
   created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT metas_pkey PRIMARY KEY (id),
-  CONSTRAINT metas_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+  ingreso_mensual numeric DEFAULT 0,
+  dia_corte integer DEFAULT 1 CHECK (dia_corte >= 1 AND dia_corte <= 28),
+  isr numeric DEFAULT 0,
+  imss numeric DEFAULT 0,
+  iva numeric DEFAULT 0,
+  vales_despensa numeric DEFAULT 0,
+  frecuencia_pago text DEFAULT 'mensual'::text,
+  fondo_ahorro numeric DEFAULT 0,
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
 ```
 
