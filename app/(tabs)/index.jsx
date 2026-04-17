@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   StatusBar,
   ActivityIndicator,
   RefreshControl,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
@@ -453,7 +455,7 @@ export default function Dashboard() {
           estilo={{ flex: 1 }}
         />
         <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => { hap.guardar(); setModalVozVisible(true); }}>
-          <Text style={estilos.btnVozEmoji}>🎙️</Text>
+          <Ionicons name="mic" size={24} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
@@ -461,7 +463,12 @@ export default function Dashboard() {
       <Modal visible={modalVozVisible} transparent animationType="slide" onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}>
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalContenido}>
-            <View style={estilos.modalHandle} />
+            <Pressable
+              onPress={() => !guardandoVoz && setModalVozVisible(false)}
+              style={estilos.modalHandleContenedor}
+            >
+              <View style={estilos.modalHandle} />
+            </Pressable>
             <Text style={estilos.modalTitulo}>Registrar por voz</Text>
             <Text style={estilos.modalSubtitulo}>"Gasté 150 pesos en tacos hoy"</Text>
             
@@ -549,6 +556,11 @@ const estilos = StyleSheet.create({
   btnVozEmoji: { fontSize: 24 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContenido: { backgroundColor: COLORS.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 48, alignItems: 'center' },
+  modalHandleContenedor: {
+    paddingVertical: 8,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+  },
   modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
   modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },

@@ -5,8 +5,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable,
-  Animated, ActivityIndicator, Alert,
+  Animated, ActivityIndicator, Alert, Easing,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { hap } from '../services/haptics';
 import { AudioModule, RecordingPresets } from 'expo-audio';
 import { COLORS } from '../constants/colors';
@@ -16,6 +17,8 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   const [estado, setEstado] = useState('idle');
   const [volumen, setVolumen] = useState(0); // 0 a 1 aprox
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const ring1Anim = useRef(new Animated.Value(0)).current;
+  const ring2Anim = useRef(new Animated.Value(0)).current;
   const recorderRef = useRef(null);
 
   // ── Barras de la onda (5 barras) ──
@@ -27,17 +30,50 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
     useRef(new Animated.Value(1)).current,
   ];
 
-  // ── Efecto de pulso base ──
+  // ── Efecto de pulso y anillos ──
   useEffect(() => {
     if (estado === 'grabando') {
+      // Pulso del botón
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.08, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
         ])
       ).start();
+
+      // Anillo 1
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(ring1Anim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+          Animated.timing(ring1Anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ])
+      ).start();
+
+      // Anillo 2 (con delay)
+      const ring2Timeout = setTimeout(() => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(ring2Anim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+            Animated.timing(ring2Anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+          ])
+        ).start();
+      }, 600);
+
+      return () => clearTimeout(ring2Timeout);
+    } else if (estado === 'procesando') {
+      // Pulso suave al procesar
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.98, duration: 500, useNativeDriver: true }),
+        ])
+      ).start();
+      ring1Anim.setValue(0);
+      ring2Anim.setValue(0);
     } else {
       pulseAnim.setValue(1);
+      ring1Anim.setValue(0);
+      ring2Anim.setValue(0);
     }
   }, [estado]);
 
@@ -88,7 +124,6 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
       recorder.onRecordingStatusUpdate = (status) => {
         if (status.metering !== undefined) {
           // El metering viene en dB (-160 a 0 aprox)
-          // Normalizamos para mayor sensibilidad: -60dB es silencio, -10dB es fuerte
           const db = status.metering;
           const level = Math.max(0, (db + 60) / 50); 
           setVolumen(level);
@@ -146,41 +181,99 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
 
       {/* Onda de audio visual */}
       <View style={estilos.ondaContenedor}>
-        {estado === 'grabando' && barAnims.map((anim, i) => (
+        {barAnims.map((anim, i) => (
           <Animated.View 
             key={i} 
             style={[
               estilos.barraOnda, 
-              { transform: [{ scaleY: anim }] }
+              { 
+                transform: [{ scaleY: anim }],
+                opacity: estado === 'grabando' ? 1 : 0.3
+              }
             ]} 
           />
         ))}
       </View>
 
-      <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-        <Pressable
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          disabled={estado === 'procesando'}
-          style={[
-            estilos.boton,
-            {
-              width: tamañoBoton,
-              height: tamañoBoton,
-              borderRadius: tamañoBoton / 2,
-              backgroundColor: estado === 'grabando' ? '#FF4444' : COLORS.primary,
-            },
-          ]}
-        >
-          {estado === 'procesando' ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={{ fontSize: esGrande ? 32 : 24 }}>
-              {estado === 'grabando' ? '⏹' : '🎙️'}
-            </Text>
-          )}
-        </Pressable>
-      </Animated.View>
+      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+        {/* Anillos — solo visibles al grabar */}
+        {estado === 'grabando' && (
+          <>
+            <Animated.View style={[
+              estilos.anillo,
+              {
+                width: tamañoBoton + 40,
+                height: tamañoBoton + 40,
+                borderRadius: (tamañoBoton + 40) / 2,
+                opacity: ring1Anim.interpolate({
+                  inputRange: [0, 0.3, 1],
+                  outputRange: [0.6, 0.3, 0],
+                }),
+                transform: [{
+                  scale: ring1Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 1.6],
+                  }),
+                }],
+              },
+            ]} />
+            <Animated.View style={[
+              estilos.anillo,
+              {
+                width: tamañoBoton + 40,
+                height: tamañoBoton + 40,
+                borderRadius: (tamañoBoton + 40) / 2,
+                opacity: ring2Anim.interpolate({
+                  inputRange: [0, 0.3, 1],
+                  outputRange: [0.6, 0.3, 0],
+                }),
+                transform: [{
+                  scale: ring2Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 1.6],
+                  }),
+                }],
+              },
+            ]} />
+          </>
+        )}
+
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <Pressable
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            disabled={estado === 'procesando'}
+            style={[
+              estilos.boton,
+              {
+                width: tamañoBoton,
+                height: tamañoBoton,
+                borderRadius: tamañoBoton / 2,
+                backgroundColor: estado === 'grabando' ? '#FF4444' : COLORS.primary,
+              },
+            ]}
+          >
+            {estado === 'procesando' ? (
+              <ActivityIndicator color="#fff" size="large" />
+            ) : estado === 'grabando' ? (
+              <View style={estilos.iconoStop}>
+                <View style={{
+                  width: esGrande ? 24 : 18,
+                  height: esGrande ? 24 : 18,
+                  borderRadius: 4,
+                  backgroundColor: '#fff',
+                }} />
+              </View>
+            ) : (
+              <Ionicons
+                name="mic"
+                size={esGrande ? 36 : 28}
+                color="#fff"
+              />
+            )}
+          </Pressable>
+        </Animated.View>
+      </View>
 
       <Text style={estilos.instruccion}>
         {estado === 'idle' ? 'Mantén presionado para hablar' : 
@@ -199,16 +292,21 @@ const estilos = StyleSheet.create({
   },
   ondaContenedor: {
     flexDirection: 'row',
-    height: 60,
+    height: 50,
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
+    justifyContent: 'center',
+    gap: 5,
+    marginBottom: 16,
   },
   barraOnda: {
-    width: 5,
-    height: 15,
+    width: 4,
+    height: 20,
     backgroundColor: COLORS.primary,
-    borderRadius: 3,
+    borderRadius: 2,
+  },
+  anillo: {
+    position: 'absolute',
+    backgroundColor: COLORS.primary,
   },
   boton: {
     alignItems: 'center',
@@ -219,8 +317,12 @@ const estilos = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  iconoStop: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   instruccion: {
-    marginTop: 16,
+    marginTop: 20,
     fontSize: 13,
     color: COLORS.textSecondary,
     fontWeight: '500',
