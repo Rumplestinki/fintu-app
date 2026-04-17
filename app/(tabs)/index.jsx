@@ -343,17 +343,16 @@ export default function Dashboard() {
       });
 
       setModalVozVisible(false);
-      setGuardandoVoz(false);
-
-      // Refrescar y avisar
       cargarDatos();
       actualizarAlertas();
       mostrarToast(`🎙️ Guardado: $${datos.monto} en ${datos.categoria?.nombre}`);
 
     } catch (error) {
       console.error('Error guardando gasto por voz:', error);
-      setGuardandoVoz(false);
       mostrarToast('No se pudo guardar el gasto. Intenta de nuevo.', 'error');
+    } finally {
+      // ✅ SIEMPRE se ejecuta, sin importar si hubo error o no
+      setGuardandoVoz(false);
     }
   };
 

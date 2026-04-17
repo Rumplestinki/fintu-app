@@ -31,8 +31,14 @@ export function calcularPeriodo(diaCorte = 1, offset = 0) {
     anioInicio = fechaPasada.getFullYear();
   }
 
-  const fechaInicioBase = new Date(anioInicio, mesInicio - offset, diaCorte);
-  const fechaFinBase = new Date(anioInicio, mesInicio - offset + 1, diaCorte - 1);
+  // Evitar desborde en meses cortos (ej: día 31 en febrero)
+  const ultimoDiaMesInicio = new Date(anioInicio, mesInicio - offset + 1, 0).getDate();
+  const ultimoDiaMesFin = new Date(anioInicio, mesInicio - offset + 2, 0).getDate();
+  const diaRealInicio = Math.min(diaCorte, ultimoDiaMesInicio);
+  const diaRealFin = Math.min(diaCorte - 1, ultimoDiaMesFin);
+
+  const fechaInicioBase = new Date(anioInicio, mesInicio - offset, diaRealInicio);
+  const fechaFinBase = new Date(anioInicio, mesInicio - offset + 1, diaRealFin);
 
   return {
     inicio: toLocalISO(fechaInicioBase),

@@ -81,8 +81,10 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   useEffect(() => {
     if (estado === 'grabando') {
       barAnims.forEach((anim, i) => {
-        // Variación aleatoria ligera para que se vea orgánico
-        const targetScale = 1 + (volumen * (2.5 + Math.random()));
+        // Usar solo el metering real, sin aleatoriedad
+        // Cada barra tiene una variación fija según su posición (más orgánico pero determinístico)
+        const variacionFija = [1.0, 1.4, 2.0, 1.4, 1.0][i] ?? 1.0;
+        const targetScale = 1 + (volumen * variacionFija * 2.5);
         Animated.spring(anim, {
           toValue: targetScale,
           friction: 4,
