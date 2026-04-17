@@ -168,8 +168,31 @@ Si mencionan PLATAFORMA DIGITAL de herramienta/trabajo → 📱 suscripciones.
 ═══════════════════════════════
 PASO 4 — DESCRIPCIÓN
 ═══════════════════════════════
-Escribe una descripción corta y natural en español (máximo 40 caracteres).
-Usa el nombre del lugar o producto mencionado.
+Escribe una descripción corta, natural y específica en español (máximo 50 caracteres).
+Incluye los detalles relevantes que el usuario mencionó:
+- Especificaciones técnicas: "Foco LED 45W", "Aceite 10W-40", "Cable USB-C 2m"
+- Marca o tienda: "Foco Philips en Home Depot", "Tenis Nike en Liverpool"
+- Cantidad si es relevante: "Despensa Costco", "6 cervezas Corona"
+- Característica importante: "Medicamento para tos", "Libro de cocina"
+
+IMPORTANTE:
+- Primera letra en MAYÚSCULA siempre
+- NO escribas solo el objeto genérico — incluye el detalle que lo hace útil
+- Máximo 50 caracteres
+
+Ejemplos BUENOS:
+- "Foco LED 45W Mercado Libre" (no solo "Foco")
+- "Uber del aeropuerto" (no solo "Uber")
+- "Tacos de canasta x3" (no solo "Tacos")
+- "Netflix mes de abril" (no solo "Netflix")
+- "Medicamento para fiebre" (no solo "Medicina")
+- "Gasolina Pemex Magna" (no solo "Gasolina")
+
+Ejemplos MALOS (demasiado genéricos):
+- "Foco" ❌
+- "Comida" ❌
+- "Transporte" ❌
+- "Compra" ❌
 
 ═══════════════════════════════
 PASO 5 — FECHA DEL GASTO
@@ -235,7 +258,7 @@ Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown.
   return {
     monto: String(resultado.monto || 0),
     categoria,
-    descripcion: resultado.descripcion || '',
+    descripcion: resultado.descripcion ? resultado.descripcion.charAt(0).toUpperCase() + resultado.descripcion.slice(1) : '',
     fecha: fechaResultado,
     transcripcion: resultado.transcripcion || '',
   };
