@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { CATEGORIAS } from '../constants/categorias';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 const LISTA_CATEGORIAS = CATEGORIAS.map(c => `${c.id} (${c.nombre})`).join(', ');
 
 // ──────────────────────────────────────────
@@ -85,9 +85,16 @@ Usa estas fechas para interpretar lo que dice el usuario:
 ═══════════════════════════════
 PASO 1 — ¿ES UN GASTO?
 ═══════════════════════════════
-Si the audio es un saludo, pregunta, prueba, ruido o conversación general
-que NO menciona ninguna compra, pago o gasto, responde EXACTAMENTE:
+Si el audio es cualquiera de estos casos, NO es un gasto:
+- Saludo o prueba: "hola", "probando", "uno dos tres"
+- Pregunta: "¿cuánto tengo?", "¿cómo funciona?"
+- Ruido de fondo sin voz clara
+- Voz pero sin mencionar compra, pago, gasto o costo
+
+Si NO es un gasto, responde EXACTAMENTE esto y nada más:
 {"monto": 0, "categoria_id": "otros", "descripcion": "", "fecha": "${HOY}", "es_gasto": false}
+
+Si SÍ es un gasto (menciona cualquier compra, pago o costo), continúa con los pasos siguientes.
 
 ═══════════════════════════════
 PASO 2 — EXTRAER MONTO
@@ -95,7 +102,19 @@ PASO 2 — EXTRAER MONTO
 Escucha el número con atención. El usuario puede decir:
 - "gasté 150", "pagué 80 pesos", "me costó 35", "son 200"
 - "ciento cincuenta", "ochenta pesos", "doscientos"
-Extrae SOLO el número. Si no se entiende el monto, usa 0.
+- "como unos 100", "más o menos 50" → extrae el número (100, 50)
+- "me salió en 250" → extrae 250
+- "puse 500" → extrae 500
+- "me lo dieron en 30" → extrae 30
+
+MONTOS EN PALABRAS (español mexicano):
+- "un peso" → 1, "diez" → 10, "veinte" → 20, "treinta" → 30
+- "cincuenta" → 50, "cien" / "ciento" → 100, "ciento cincuenta" → 150
+- "doscientos" → 200, "trescientos" → 300, "quinientos" → 500
+- "mil" → 1000, "mil quinientos" → 1500, "dos mil" → 2000
+
+Si hay DOS montos (ej: "50 de tacos y 30 de agua"), extrae SOLO el primero.
+Si el monto genuinamente no se entiende, usa 0.
 
 ═══════════════════════════════
 PASO 3 — CLASIFICAR CATEGORÍA
@@ -223,7 +242,7 @@ Responde ÚNICAMENTE con JSON válido. Sin explicación, sin markdown.
           { text: prompt },
         ],
       }],
-      generationConfig: { maxOutputTokens: 600, temperature: 0.1 },
+      generationConfig: { maxOutputTokens: 800, temperature: 0.1 },
     }),
   });
 
