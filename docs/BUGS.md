@@ -4,6 +4,34 @@ Este archivo documenta bugs complejos encontrados durante el desarrollo, su caus
 
 ---
 
+## [2026-04-17] Bug 13: netoMensual en perfil.jsx no descontaba fondoAhorro
+- **Síntoma:** El ingreso neto mostrado en la pantalla de perfil era mayor al real porque no restaba el fondo de ahorro configurado.
+- **Causa:** La fórmula `(ingreso - isr - imss - iva + vales) * factor` omitía `fondoAhorro`. Además, el TextInput de fondo existía en el estado pero nunca se renderizaba en el modal ni se cargaba al abrirlo, por lo que siempre se guardaba como 0.
+- **Solución:** Fórmula corregida a `(ingreso - isr - imss - iva - fondoAhorro + vales) * factor`. Se añadió el campo "Fondo de ahorro" al modal y se agregó `setFondoInput(String(fondoAhorro))` al handler de apertura.
+
+---
+
+## [2026-04-17] Bug 12: offset -1 en gastos.jsx causaba datos de periodo futuro
+- **Síntoma:** Al seleccionar "Mes anterior" en la pantalla de Gastos, aparecía la lista vacía como si fuera un periodo futuro.
+- **Causa:** Se pasaba `offset = -1` a `calcularPeriodo`, pero la convención de esa función es `offset = 0` para el periodo actual y `offset = 1` para el anterior (resta el offset al mes de inicio). Con `-1` se calculaba un periodo hacia el futuro.
+- **Solución:** Cambiado a `const offset = periodoActivoId === 'anterior' ? 1 : 0`.
+
+---
+
+## [2026-04-17] Bug 11: obtenerGastosMes ignoraba los parámetros mes/anio con diaCorte > 1
+- **Síntoma:** Al consultar el historial de meses pasados, siempre mostraba los gastos del mes actual cuando el usuario tenía un día de corte distinto al 1.
+- **Causa:** En la rama `else` de `obtenerGastosMes` (cuando `diaCorte > 1`), se llamaba `calcularPeriodo(diaCorte, 0)` ignorando los parámetros `mes` y `anio` recibidos, lo que siempre calculaba el periodo actual.
+- **Solución:** Se reconstruye el rango de fechas directamente desde los parámetros recibidos: la fecha de inicio es `${anio}-${mes}-${diaCorte}` y la de fin se calcula sumando un mes.
+
+---
+
+## [2026-04-17] Bug 10: Crash al eliminar presupuesto si se ejecuta dos veces
+- **Síntoma:** Al presionar "Eliminar" en un presupuesto, si el modal aún estaba visible y se intentaba eliminar de nuevo, la app crasheaba con error de propiedad null.
+- **Causa:** `ejecutarEliminacion` accedía a `presupuesto.id` sin verificar que `presupuesto` no fuera null. Al reutilizar el estado entre aperturas del modal, era posible que `presupuesto` ya estuviera limpio.
+- **Solución:** Guard añadido al inicio: `if (!presupuesto) { setModalEliminarVisible(false); return; }`. El modal también cierra en la rama `catch`.
+
+---
+
 ## [2026-04-15] Bug 8: Error PGRST204 - Columnas inexistentes en tabla "users"
 - **Síntoma:** Error al intentar guardar la configuración de ingresos: `Could not find the 'imss' column of 'users' in the schema cache`.
 - **Causa:** Se implementó la lógica de deducciones en el código frontend antes de crear las columnas correspondientes en la tabla `users` de Supabase.

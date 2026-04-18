@@ -20,9 +20,9 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#6C63FF",
-        "versionCode": 2
+        "backgroundColor": "#6C63FF"
       },
+      "versionCode": 2,
       "package": "com.fintu.app",
       "permissions": []
     },

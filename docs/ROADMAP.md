@@ -62,6 +62,39 @@
 
 ---
 
+## AUDITORÍA COMPLETADA [2026-04-17]
+
+Se realizó una auditoría exhaustiva del MVP. Todos los puntos fueron corregidos excepto la exposición del API key de Gemini (intencional hasta producción).
+
+### Bugs críticos ✅
+- `gastos.jsx`: offset "mes anterior" corregido (-1 → 1)
+- `services/gastos.js`: `obtenerGastosMes` ahora respeta mes/anio con diaCorte > 1
+- `presupuesto.jsx`: null-check en `ejecutarEliminacion` evita crash
+- `perfil.jsx`: `netoMensual` ahora descuenta `fondoAhorro`; campo añadido al modal
+
+### Seguridad ✅
+- Validación de sesión en todos los servicios antes de ejecutar queries
+- `actualizarGasto`, `eliminarGasto`, `eliminarPresupuesto` con filtro `user_id` extra
+- Validación de valores negativos en deducciones de nómina
+
+### Rendimiento ✅
+- `index.jsx`: 3 queries de Supabase ahora corren en paralelo con `Promise.all`
+- `presupuesto.jsx`: animación usa índice del `map` en lugar de `indexOf`
+
+### UX ✅
+- Avatar muestra `?` mientras carga (en lugar de string vacío)
+- `agregar.jsx`: header usa `SafeAreaInsets` en lugar de `paddingTop: 60` fijo
+- `presupuesto.jsx`: empty state cuando no hay presupuestos configurados
+- `BotonFintu.jsx`: estado cargando muestra `<ActivityIndicator>`
+- `gastos.jsx`: toast con posición relativa, modal cierra en error
+
+### Arquitectura ✅
+- Nuevos: `utils/fecha.js`, `utils/formato.js`, `components/Toast.jsx`
+- `BotonVoz.jsx`: corregido Rules of Hooks en `barAnims`; límite 30 s grabación
+- `_layout.jsx`: eliminado re-read de AsyncStorage en cada navegación
+
+---
+
 ## BACKLOG RECIENTE (Solucionado)
 - ✅ Bug 1: Teclado se cierra al buscar en historial — TextInput fuera del SectionList
 - ✅ Bug 2: Gasto con fecha pasada aparece arriba — doble .order en Supabase (fecha + created_at)
@@ -77,7 +110,18 @@
 
 ## BITÁCORA DE SESIONES
 
-### Sesión 16-Abr-2026 (Actual)
+### Sesión 17-Abr-2026 (Actual)
+- **Objetivo:** Auditoría completa del MVP — bugs, seguridad, rendimiento y arquitectura.
+- **Logros:**
+  - ✅ **4 bugs críticos** corregidos (ver BUGS.md: Bug 10–13)
+  - ✅ **Seguridad**: validación de auth en todos los servicios + filtros user_id dobles
+  - ✅ **Rendimiento**: queries paralelas en Dashboard con Promise.all
+  - ✅ **Utilidades centralizadas**: `utils/fecha.js`, `utils/formato.js`, `components/Toast.jsx`
+  - ✅ **BotonVoz**: Rules of Hooks corregido + límite de grabación de 30 s
+  - ✅ **UX**: SafeAreaInsets en agregar.jsx, empty state en presupuesto.jsx, ActivityIndicator en BotonFintu
+- **Estado de Git:** Commit `fcb6e0d`, mergeado a `main`.
+
+### Sesión 16-Abr-2026
 - **Objetivo:** Pulido de UI/UX y Animaciones Premium.
 - **Logros:**
   - ✅ **Rediseño de TabBar**: Implementación de una barra de navegación personalizada con botón central flotante y respuesta táctil (haptics).

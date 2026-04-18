@@ -177,6 +177,34 @@ SUPABASE_ANON_KEY=tu_key
 
 ---
 
+## CONVENCIONES CRÍTICAS DE CÓDIGO
+
+### calcularPeriodo(diaCorte, offset)
+- `offset = 0` → periodo **actual**
+- `offset = 1` → periodo **anterior** (resta 1 al mes de inicio)
+- ⚠️ Nunca usar `offset = -1` (calcula un periodo futuro)
+
+### Sistema dual de IDs de categorías
+- `id` (string) → usado en la UI y en `constants/categorias.js`
+- `dbId` (integer) → almacenado en Supabase como `categoria_id`
+- Conversión: `getCategoriaByDbId(dbId)` en `constants/categorias.js`
+
+### Utilidades compartidas (evitar duplicar)
+| Utilidad | Archivo |
+|---|---|
+| `formatMXN(monto)` | `utils/formato.js` |
+| `formatearFechaISO(date)` / `toLocalISO(d)` | `utils/fecha.js` |
+| `formatearFechaLegible(fechaISO)` | `utils/fecha.js` |
+| `formatearFechaGasto(fechaISO)` | `utils/fecha.js` |
+| `NOMBRES_MESES`, `MESES_CORTOS` | `utils/fecha.js` |
+| Componente Toast | `components/Toast.jsx` |
+
+### Fechas — siempre usar hora local
+- Nunca usar `new Date().toISOString()` (devuelve UTC, puede cambiar el día)
+- Siempre usar `toLocalISO(date)` de `utils/fecha.js`
+
+---
+
 ## DISEÑO Y UX
 - Estilo: minimalista, moderno, amigable
 - Color principal: púrpura (#6C63FF)

@@ -1,38 +1,68 @@
-# Sesión activa — 16 Abr 2026
+# Sesión activa — 17 Abr 2026
 
 ## Objetivo de la sesión
-Pulido de UI/UX y animaciones premium en toda la app.
+Auditoría exhaustiva del MVP: bugs críticos, seguridad, rendimiento, UX y deuda técnica.
 
 ## Qué se completó hoy
-- ✅ TabBar rediseñada con botón central flotante, animaciones y haptics
-- ✅ `services/haptics.js` creado — feedback táctil centralizado en toda la app
-- ✅ Contador de dinero animado en el Dashboard
-- ✅ Spring animations en selección de categorías y tarjetas de gasto
-- ✅ Espaciado inferior corregido en `perfil.jsx` y `presupuesto.jsx`
-- ✅ **Cierre Premium de Alertas**: Implementación de animación de salida en 3 capas (fade + elevación + colapso de layout con `maxHeight`) para evitar saltos bruscos al cerrar alertas de presupuesto.
+
+### Bugs críticos
+- ✅ `gastos.jsx`: offset "mes anterior" corregido de -1 a 1 en `calcularPeriodo`
+- ✅ `services/gastos.js`: `obtenerGastosMes` ahora respeta mes/anio cuando diaCorte > 1
+- ✅ `presupuesto.jsx`: null-check en `ejecutarEliminacion` evita crash al doble-eliminar
+- ✅ `perfil.jsx`: `netoMensual` ahora descuenta `fondoAhorro`; campo añadido al modal de ingresos
+
+### Seguridad
+- ✅ Validación de sesión en todos los servicios antes de queries
+- ✅ `actualizarGasto`, `eliminarGasto`, `eliminarPresupuesto` con filtro `user_id` extra
+- ✅ Validación de valores negativos en deducciones de perfil
+
+### Rendimiento
+- ✅ `index.jsx`: 3 queries de Supabase corren en paralelo con `Promise.all`
+- ✅ `presupuesto.jsx`: animación usa índice del map en vez de `indexOf`
+
+### UX
+- ✅ Avatar muestra `?` mientras carga en lugar de string vacío
+- ✅ `agregar.jsx`: header usa `useSafeAreaInsets` en lugar de `paddingTop: 60` fijo
+- ✅ `presupuesto.jsx`: empty state cuando no hay presupuestos configurados
+- ✅ `BotonFintu.jsx`: estado cargando muestra `<ActivityIndicator>` en lugar de `...`
+- ✅ `gastos.jsx`: toast con posición relativa; modal de edición cierra en error; DateTimePicker añadido
+
+### Arquitectura
+- ✅ `utils/fecha.js` — centraliza `toLocalISO`, `formatearFechaLegible`, `formatearFechaGasto`, `NOMBRES_MESES`
+- ✅ `utils/formato.js` — centraliza `formatMXN`
+- ✅ `components/Toast.jsx` — componente compartido, elimina duplicación en 3 pantallas
+- ✅ `BotonVoz.jsx`: `barAnims` corregido (Rules of Hooks); límite 30 s con auto-stop y cleanup
+- ✅ `_layout.jsx`: eliminado `useEffect` que releía AsyncStorage en cada cambio de segmento
 
 ## Archivos modificados en esta sesión
-- `app/_layout.jsx` — nueva TabBar personalizada
-- `services/haptics.js` — NUEVO, centraliza expo-haptics
-- `app/(tabs)/index.jsx` — contador animado
-- `app/(tabs)/perfil.jsx` — spacer inferior
-- `app/(tabs)/presupuesto.jsx` — spacer inferior
-- `app/(tabs)/agregar.jsx` — spring animations en categorías
+- `app/(tabs)/agregar.jsx` — SafeAreaInsets, shared utils, shared Toast
+- `app/(tabs)/gastos.jsx` — offset, toast, DateTimePicker, onDelete
+- `app/(tabs)/index.jsx` — Promise.all, avatar flash, shared utils
+- `app/(tabs)/perfil.jsx` — netoMensual, fondo input, validación negativos
+- `app/(tabs)/presupuesto.jsx` — null-check, indexOf, empty state, overflow duplicado
+- `app/_layout.jsx` — eliminar re-read AsyncStorage
+- `components/BotonFintu.jsx` — ActivityIndicator
+- `components/BotonVoz.jsx` — Rules of Hooks, límite grabación
+- `components/Toast.jsx` — NUEVO, componente compartido
+- `services/gastos.js` — null checks, obtenerGastosMes, user_id en update/delete
+- `services/notificaciones.js` — null checks
+- `services/presupuestos.js` — null checks, user_id en eliminar
+- `utils/fecha.js` — NUEVO
+- `utils/formato.js` — NUEVO
 
 ## Commits de esta sesión
-84bf80f, 9205bc4, 8d899d9, a606965, 1bd17cd
+- `fcb6e0d` — mergeado a main
 
 ## Estado actual del proyecto
-- Fase 1 MVP: ✅ COMPLETA
+- Fase 1 MVP: ✅ COMPLETA y auditada
 - Fase 2 IA: registro por voz funcionando ✅
 - Pendiente Fase 2: reportes con gráficas, lectura de emails
 
-## Siguiente tarea acordada
+## Siguiente tarea sugerida
 Pantalla de reportes con gráficas (Fase 2):
 - Gráfica de dona por categoría (gastos del mes)
 - Gráfica de barras por semana
-- Query a Supabase: tabla gastos, filtrar por user_id + mes actual
 - Librería sugerida: Victory Native o Gifted Charts
 
-## Bugs conocidos activos
-- Conexión LM Studio Mac-Windows aún no probada
+## Pendiente intencional
+- ⚠️ API key de Gemini expuesta en el bundle (`EXPO_PUBLIC_GEMINI_API_KEY`) — se migrará a EAS Secrets antes de producción
