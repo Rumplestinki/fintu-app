@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { hap } from '../services/haptics';
 import { AudioModule, RecordingPresets } from 'expo-audio';
 import { COLORS } from '../constants/colors';
-import { CATEGORIAS, getCategoriaById } from '../constants/categorias';
+import { getCategoriaById } from '../constants/categorias';
 import { procesarAudioConGemini } from '../services/voz';
 import { formatMXN } from '../utils/formato';
 
@@ -248,10 +248,9 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   };
   const gradiente = gradientesOrb[estado] || gradientesOrb.idle;
 
-  // Categoría del resultado para mostrar ícono
-  const categoriaResultado = datosResultado
-    ? getCategoriaById(datosResultado.categoriaId || 'otros')
-    : null;
+  // datosResultado.categoria ya es el objeto completo devuelto por procesarAudioConGemini
+  const categoriaResultado = datosResultado?.categoria
+    ?? getCategoriaById('otros');
 
   return (
     <View style={estilos.contenedor}>
