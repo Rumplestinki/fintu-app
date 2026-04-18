@@ -273,11 +273,19 @@ export default function PerfilScreen() {
         ) : (
           <>
             <View style={styles.avatarSeccion}>
-              <View style={styles.avatar}>
+              <LinearGradient
+                colors={['#A78BFA', '#6C63FF', '#4B3FCC']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatar}
+              >
                 <Text style={styles.avatarTexto}>{nombre.charAt(0).toUpperCase()}</Text>
-              </View>
+              </LinearGradient>
               <Text style={styles.nombreTexto}>{nombre}</Text>
               <Text style={styles.emailTexto}>{email}</Text>
+              <View style={styles.planBadge}>
+                <Text style={styles.planBadgeTexto}>PLAN GRATUITO</Text>
+              </View>
             </View>
 
             <Text style={styles.seccionTitulo}>Cuenta</Text>
@@ -443,7 +451,9 @@ const styles = StyleSheet.create({
   cabecera: { paddingHorizontal: 20, paddingVertical: 12 },
   titulo: { fontSize: 26, fontWeight: '700', color: COLORS.textPrimary },
   avatarSeccion: { alignItems: 'center', paddingVertical: 24, gap: 6 },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  avatar: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  planBadge: { marginTop: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, backgroundColor: COLORS.primary + '20', borderWidth: 1, borderColor: COLORS.primary + '40' },
+  planBadgeTexto: { fontSize: 10, fontWeight: '700', color: COLORS.primary, letterSpacing: 1.2 },
   avatarTexto: { fontSize: 34, fontWeight: '700', color: '#fff' },
   nombreTexto: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary },
   emailTexto: { fontSize: 14, color: COLORS.textSecondary },
