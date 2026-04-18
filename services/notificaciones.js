@@ -1,7 +1,5 @@
 // services/notificaciones.js
 // Verificación de presupuestos — devuelve alertas para mostrar in-app
-// Sin expo-notifications (no compatible con Expo Go SDK 53+)
-// Las alertas se muestran como banners premium dentro del dashboard
 
 import { obtenerPresupuestosMes } from './presupuestos';
 import { obtenerGastosMes, calcularPeriodo } from './gastos';
@@ -10,15 +8,12 @@ import { supabase } from './supabase';
 
 // ──────────────────────────────────────────
 // Verificar presupuestos y devolver alertas
-// Retorna array de alertas para mostrar en la UI
-// Llamar después de registrar cualquier gasto
 // ──────────────────────────────────────────
 export async function verificarPresupuestos() {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return [];
 
-    // Obtener dia_corte del perfil
     const { data: perfil } = await supabase
       .from('users')
       .select('dia_corte')
@@ -27,11 +22,9 @@ export async function verificarPresupuestos() {
 
     const diaCorte = perfil?.dia_corte || 1;
 
-    // Calcular el periodo actual basado en el día de corte
     const { inicio } = calcularPeriodo(diaCorte, 0);
     const [anioIni, mesIni] = inicio.split('-').map(Number);
 
-    // El mes y año del presupuesto deben corresponder al INICIO del periodo
     const budgetMonth = mesIni;
     const budgetYear = anioIni;
 

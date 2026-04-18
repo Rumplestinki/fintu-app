@@ -20,15 +20,10 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   const ring1Anim = useRef(new Animated.Value(0)).current;
   const ring2Anim = useRef(new Animated.Value(0)).current;
   const recorderRef = useRef(null);
+  const recordingTimeoutRef = useRef(null);
 
-  // ── Barras de la onda (5 barras) ──
-  const barAnims = [
-    useRef(new Animated.Value(1)).current,
-    useRef(new Animated.Value(1)).current,
-    useRef(new Animated.Value(1)).current,
-    useRef(new Animated.Value(1)).current,
-    useRef(new Animated.Value(1)).current,
-  ];
+  // ── Barras de la onda (5 barras) — un solo useRef para cumplir Rules of Hooks ──
+  const barAnims = useRef(Array.from({ length: 5 }, () => new Animated.Value(1))).current;
 
   // ── Efecto de pulso y anillos ──
   useEffect(() => {
@@ -100,6 +95,7 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   // ── Limpiar al desmontar ──
   useEffect(() => {
     return () => {
+      if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
       if (recorderRef.current) {
         recorderRef.current.stop().catch(() => {});
         recorderRef.current = null;
@@ -142,6 +138,9 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
       
       await recorder.record();
       setEstado('grabando');
+
+      // Auto-stop después de 30 segundos
+      recordingTimeoutRef.current = setTimeout(() => handlePressOut(), 30000);
     } catch (error) {
       console.error('Error al iniciar recorder:', error);
       setEstado('idle');
@@ -151,6 +150,11 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   // ── Detener y procesar ──
   const handlePressOut = async () => {
     if (estado !== 'grabando' || !recorderRef.current) return;
+
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
 
     try {
       hap.suave();

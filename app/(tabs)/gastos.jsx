@@ -11,7 +11,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Modal,
   KeyboardAvoidingView,
   Platform,
@@ -20,18 +19,23 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS, getCategoriaByDbId } from '../../constants/categorias';
+import { NOMBRES_MESES } from '../../utils/fecha';
+import { formatMXN } from '../../utils/formato';
 import GastoCard from '../../components/GastoCard';
-import { 
-  obtenerGastosMes, 
-  obtenerTodosLosGastos, 
-  eliminarGasto, 
+import Toast from '../../components/Toast';
+import {
+  obtenerGastosMes,
+  obtenerTodosLosGastos,
+  eliminarGasto,
   actualizarGasto,
-  calcularPeriodo
+  calcularPeriodo,
 } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import { hap } from '../../services/haptics';
+import { toLocalISO } from '../../utils/fecha';
 
 // ─── CONSTANTES ──────────────────────────────────────────
 
@@ -44,11 +48,6 @@ const PERIODOS_RAPIDOS = [
   { id: 'actual', label: 'Este mes' },
   { id: 'anterior', label: 'Anterior' },
   { id: 'todo', label: 'Todo' },
-];
-
-const NOMBRES_MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
 // ─── COMPONENTES AUXILIARES ──────────────────────────────
@@ -98,29 +97,29 @@ export default function HistorialScreen() {
   const [modalPeriodoVisible, setModalPeriodoVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [gastoEditando, setGastoEditando] = useState(null);
-  
+
   // Estados de inputs edición
   const [montoInput, setMontoInput] = useState('');
   const [categoriaInput, setCategoriaInput] = useState(null);
   const [descripcionInput, setDescripcionInput] = useState('');
   const [fechaInput, setFechaInput] = useState('');
+  const [mostrarPickerFecha, setMostrarPickerFecha] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   // Estados de eliminación
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
   const [gastoAEliminar, setGastoAEliminar] = useState(null);
 
-  // Estados de Toast Interno (Modal)
+  // Toast global
+  const [toastMensaje, setToastMensaje] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastTipo, setToastTipo] = useState('exito');
+
+  // Toast dentro del modal de edición
   const [toastModalMensaje, setToastModalMensaje] = useState('');
   const [toastModalVisible, setToastModalVisible] = useState(false);
   const [toastModalTipo, setToastModalTipo] = useState('error');
   const toastModalOpacity = useRef(new Animated.Value(0)).current;
-
-  // Estados de Toast Global (Pantalla)
-  const [toastGlobalMensaje, setToastGlobalMensaje] = useState('');
-  const [toastGlobalVisible, setToastGlobalVisible] = useState(false);
-  const [toastGlobalTipo, setToastGlobalTipo] = useState('exito');
-  const toastGlobalOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Cargar Gastos desde Supabase ──
   async function cargarGastos() {
@@ -133,7 +132,7 @@ export default function HistorialScreen() {
         .select('dia_corte')
         .eq('id', user.id)
         .single();
-      
+
       const corte = perfil?.dia_corte || 1;
       setDiaCorte(corte);
 
@@ -141,7 +140,8 @@ export default function HistorialScreen() {
       if (periodoActivoId === 'todo') {
         data = await obtenerTodosLosGastos(user.id);
       } else {
-        const offset = periodoActivoId === 'anterior' ? -1 : 0;
+        // CRÍTICO CORREGIDO: offset = 1 para "anterior" (no -1)
+        const offset = periodoActivoId === 'anterior' ? 1 : 0;
         const { inicio } = calcularPeriodo(corte, offset);
         const [año, mes] = inicio.split('-').map(Number);
         data = await obtenerGastosMes(mes, año, corte);
@@ -165,7 +165,7 @@ export default function HistorialScreen() {
   const secciones = useMemo(() => {
     let filtrados = gastosRaw.filter((g) => {
       const matchCat = categoriaActiva === 'todas' || Number(g.categoria_id) === Number(categoriaActiva);
-      const matchBusqueda = !busqueda || 
+      const matchBusqueda = !busqueda ||
         (g.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
         getCategoriaByDbId(g.categoria_id).nombre.toLowerCase().includes(busqueda.toLowerCase());
       return matchCat && matchBusqueda;
@@ -180,10 +180,7 @@ export default function HistorialScreen() {
 
     return Object.keys(grupos)
       .sort((a, b) => b.localeCompare(a))
-      .map((fecha) => ({
-        title: fecha,
-        data: grupos[fecha],
-      }));
+      .map((fecha) => ({ title: fecha, data: grupos[fecha] }));
   }, [gastosRaw, categoriaActiva, busqueda]);
 
   // ── Acciones de Gasto ──
@@ -203,30 +200,17 @@ export default function HistorialScreen() {
     toastModalOpacity.setValue(0);
     setToastModalVisible(true);
     Animated.sequence([
-      Animated.timing(toastModalOpacity, {
-        toValue: 1, duration: 200, useNativeDriver: true,
-      }),
+      Animated.timing(toastModalOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       Animated.delay(1800),
-      Animated.timing(toastModalOpacity, {
-        toValue: 0, duration: 300, useNativeDriver: true,
-      }),
+      Animated.timing(toastModalOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start(() => setToastModalVisible(false));
   };
 
   const mostrarToastGlobal = (mensaje, tipo = 'exito') => {
-    setToastGlobalMensaje(mensaje);
-    setToastGlobalTipo(tipo);
-    toastGlobalOpacity.setValue(0);
-    setToastGlobalVisible(true);
-    Animated.sequence([
-      Animated.timing(toastGlobalOpacity, {
-        toValue: 1, duration: 200, useNativeDriver: true,
-      }),
-      Animated.delay(2000),
-      Animated.timing(toastGlobalOpacity, {
-        toValue: 0, duration: 300, useNativeDriver: true,
-      }),
-    ]).start(() => setToastGlobalVisible(false));
+    setToastMensaje(mensaje);
+    setToastTipo(tipo);
+    setToastVisible(false);
+    setTimeout(() => setToastVisible(true), 50);
   };
 
   async function handleGuardarEdicion() {
@@ -253,10 +237,8 @@ export default function HistorialScreen() {
         prev.map((g) => g.id === gastoEditando.id ? { ...g, ...actualizado } : g)
       );
       hap.logro();
-      setModalVisible(false);          // cerrar inmediatamente
-      setTimeout(() => {
-        mostrarToastGlobal('Gasto actualizado correctamente', 'exito');
-      }, 300);  
+      setModalVisible(false);
+      setTimeout(() => mostrarToastGlobal('Gasto actualizado correctamente', 'exito'), 300);
     } catch (e) {
       console.error('Error actualizando gasto:', e);
       hap.error();
@@ -281,12 +263,11 @@ export default function HistorialScreen() {
       setModalEliminarVisible(false);
       setModalVisible(false);
       setGastoAEliminar(null);
-      // Toast global - se muestra después de cerrar los modales
-      setTimeout(() => {
-        mostrarToastGlobal('Gasto eliminado', 'exito');
-      }, 300);
+      setTimeout(() => mostrarToastGlobal('Gasto eliminado', 'exito'), 300);
     } catch (e) {
-      mostrarToastGlobal('No se pudo eliminar el gasto', 'error');
+      // CORREGIDO: cerrar modal de confirmación aunque falle
+      setModalEliminarVisible(false);
+      setTimeout(() => mostrarToastGlobal('No se pudo eliminar el gasto', 'error'), 300);
     }
   }
 
@@ -312,17 +293,20 @@ export default function HistorialScreen() {
 
   return (
     <View style={[styles.contenedor, { paddingTop: insets.top }]}>
-      
+
+      {/* ── Toast Global ── */}
+      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
+
       {/* ── Cabecera ── */}
       <View style={styles.cabecera}>
         <View>
           <Text style={styles.titulo}>Gastos</Text>
-          <Pressable 
-            style={styles.selectorPeriodo} 
+          <Pressable
+            style={styles.selectorPeriodo}
             onPress={() => { hap.suave(); setModalPeriodoVisible(true); }}
           >
             <Text style={styles.periodoActivo}>
-              {periodoActivoId === 'actual' ? 'Este mes' : 
+              {periodoActivoId === 'actual' ? 'Este mes' :
                periodoActivoId === 'anterior' ? 'Mes anterior' : 'Todo el historial'}
             </Text>
             <Ionicons name="chevron-down" size={14} color={COLORS.primary} />
@@ -332,23 +316,6 @@ export default function HistorialScreen() {
           <Ionicons name="refresh-outline" size={24} color={COLORS.textSecondary} />
         </Pressable>
       </View>
-
-      {/* ── Toast Global ── */}
-      {toastGlobalVisible && (
-        <Animated.View style={[
-          styles.toastGlobal,
-          { top: insets.top + 70 },
-          toastGlobalTipo === 'error'
-            ? { borderColor: COLORS.error, backgroundColor: '#2A1515' }
-            : { borderColor: COLORS.success, backgroundColor: '#1A2A1A' },
-          { opacity: toastGlobalOpacity },
-        ]}>
-          <Text style={{ fontSize: 16 }}>
-            {toastGlobalTipo === 'error' ? '❌' : '✅'}
-          </Text>
-          <Text style={styles.toastGlobalTexto}>{toastGlobalMensaje}</Text>
-        </Animated.View>
-      )}
 
       {/* ── Filtros ── */}
       <View style={styles.filtros}>
@@ -368,9 +335,9 @@ export default function HistorialScreen() {
           )}
         </View>
 
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.scrollCategorias}
         >
           {CATEGORIAS_FILTER.map((cat) => (
@@ -378,10 +345,7 @@ export default function HistorialScreen() {
               key={cat.id}
               cat={cat}
               activa={String(categoriaActiva) === String(cat.dbId || cat.id)}
-              onPress={() => { 
-                hap.suave(); 
-                setCategoriaActiva(cat.dbId || cat.id); 
-              }}
+              onPress={() => { hap.suave(); setCategoriaActiva(cat.dbId || cat.id); }}
             />
           ))}
         </ScrollView>
@@ -397,9 +361,10 @@ export default function HistorialScreen() {
           sections={secciones}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <GastoCard 
-              gasto={item} 
+            <GastoCard
+              gasto={item}
               onPress={() => abrirEdicion(item)}
+              onDelete={() => confirmarEliminacion(item.id)}
             />
           )}
           renderSectionHeader={renderHeaderSeccion}
@@ -423,7 +388,7 @@ export default function HistorialScreen() {
             <Text style={styles.modalTitulo}>Ver periodo</Text>
             <View style={styles.accesoRapidoFila}>
               {PERIODOS_RAPIDOS.map(p => (
-                <Pressable 
+                <Pressable
                   key={p.id}
                   style={[styles.btnRapido, periodoActivoId === p.id && styles.btnRapidoActivo]}
                   onPress={() => { hap.suave(); setPeriodoActivoId(p.id); setModalPeriodoVisible(false); }}
@@ -440,13 +405,13 @@ export default function HistorialScreen() {
 
       {/* ── Modal de Edición ── */}
       <Modal visible={modalVisible} transparent animationType="slide">
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.overlayEdicion}
         >
           <View style={styles.modalEdicion}>
             <View style={styles.modalManija} />
-            
+
             <View style={styles.modalHeader}>
               <Text style={styles.modalTituloEdicion}>Editar gasto</Text>
               <Pressable
@@ -489,6 +454,35 @@ export default function HistorialScreen() {
                   placeholderTextColor={COLORS.textMuted}
                 />
 
+                {/* NUEVO: Selector de fecha en edición */}
+                <Text style={styles.label}>Fecha</Text>
+                <Pressable
+                  style={styles.fechaSelector}
+                  onPress={() => { hap.suave(); setMostrarPickerFecha(true); }}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
+                  <Text style={styles.fechaSelectorTexto}>
+                    {fechaInput ? fechaInput : 'Seleccionar fecha'}
+                  </Text>
+                </Pressable>
+
+                {mostrarPickerFecha && (
+                  <DateTimePicker
+                    value={new Date(fechaInput + 'T12:00:00')}
+                    mode="date"
+                    display="default"
+                    maximumDate={new Date()}
+                    onChange={(evento, fechaSeleccionada) => {
+                      setMostrarPickerFecha(false);
+                      if (evento.type === 'dismissed') return;
+                      if (fechaSeleccionada) {
+                        setFechaInput(toLocalISO(fechaSeleccionada));
+                        hap.suave();
+                      }
+                    }}
+                  />
+                )}
+
                 <Text style={styles.label}>Seleccionar categoría</Text>
                 <ScrollView
                   horizontal
@@ -511,10 +505,7 @@ export default function HistorialScreen() {
                       <Text style={styles.categoriaChipModalEmoji}>{cat.icono}</Text>
                       <Text style={[
                         styles.categoriaChipModalTexto,
-                        categoriaInput?.id === cat.id && {
-                          color: cat.color,
-                          fontWeight: '600',
-                        },
+                        categoriaInput?.id === cat.id && { color: cat.color, fontWeight: '600' },
                       ]}>
                         {cat.nombre}
                       </Text>
@@ -523,14 +514,14 @@ export default function HistorialScreen() {
                 </ScrollView>
 
                 <View style={styles.modalBotones}>
-                  <Pressable 
-                    style={styles.botonCancelar} 
+                  <Pressable
+                    style={styles.botonCancelar}
                     onPress={() => setModalVisible(false)}
                   >
                     <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                   </Pressable>
-                  <Pressable 
-                    style={styles.botonGuardar} 
+                  <Pressable
+                    style={styles.botonGuardar}
                     onPress={handleGuardarEdicion}
                     disabled={guardando}
                   >
@@ -545,7 +536,7 @@ export default function HistorialScreen() {
             )}
           </View>
 
-          {/* Toast Interno - Fuera de modalEdicion para evitar recortes */}
+          {/* Toast dentro del modal — CORREGIDO: usa top relativo al contenedor */}
           {toastModalVisible && (
             <Animated.View style={[
               styles.toastModal,
@@ -606,17 +597,17 @@ export default function HistorialScreen() {
 
 const styles = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
-  cabecera: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  cabecera: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15
+    paddingVertical: 15,
   },
   titulo: { fontSize: 28, fontWeight: '700', color: COLORS.textPrimary },
   selectorPeriodo: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   periodoActivo: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
-  
+
   filtros: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 5 },
   barraBusqueda: {
     flexDirection: 'row',
@@ -628,36 +619,36 @@ const styles = StyleSheet.create({
     height: 44,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: COLORS.border
+    borderColor: COLORS.border,
   },
   inputBusqueda: { flex: 1, marginLeft: 8, color: COLORS.textPrimary, fontSize: 15 },
-  
+
   scrollCategorias: { paddingLeft: 20, paddingRight: 10, paddingVertical: 5 },
-  chip: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.surface,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: COLORS.border
+    borderColor: COLORS.border,
   },
   chipActivo: { backgroundColor: COLORS.primary + '15', borderColor: COLORS.primary },
   emojiChip: { fontSize: 16, marginRight: 6 },
   textoChip: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '500' },
   textoChipActivo: { color: COLORS.primary, fontWeight: '600' },
 
-  headerSeccion: { 
-    backgroundColor: COLORS.background, 
-    paddingHorizontal: 20, 
+  headerSeccion: {
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 20,
     paddingVertical: 10,
-    marginTop: 10
+    marginTop: 10,
   },
   textoHeaderSeccion: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, textTransform: 'uppercase' },
   lista: { paddingHorizontal: 16, paddingBottom: 20 },
-  
+
   contenedorCarga: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   estadoVacio: { alignItems: 'center', marginTop: 100, paddingHorizontal: 40 },
   emojiVacio: { fontSize: 50, marginBottom: 20 },
@@ -676,7 +667,7 @@ const styles = StyleSheet.create({
   overlayEdicion: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalEdicion: { backgroundColor: COLORS.surface, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, paddingBottom: 40, maxHeight: '95%' },
   modalManija: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  
+
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -712,12 +703,24 @@ const styles = StyleSheet.create({
   prefijoMonto: { fontSize: 30, fontWeight: '700', color: COLORS.textPrimary, marginRight: 5 },
   inputMonto: { fontSize: 40, fontWeight: '700', color: COLORS.primary, flex: 1 },
   inputDesc: { backgroundColor: COLORS.background, borderRadius: 12, padding: 15, color: COLORS.textPrimary, fontSize: 16, marginBottom: 20, borderWidth: 1.5, borderColor: COLORS.border },
-  
-  categoriasModalScroll: {
-    paddingBottom: 12,
-    paddingRight: 8,
-    gap: 8,
+
+  // Selector de fecha en edición
+  fechaSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
   },
+  fechaSelectorTexto: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+  },
+
+  categoriasModalScroll: { paddingBottom: 12, paddingRight: 8, gap: 8 },
   categoriaChipModal: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -748,10 +751,10 @@ const styles = StyleSheet.create({
   botonGuardar: { flex: 2, height: 48, borderRadius: 12, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
   botonGuardarTexto: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
-  // Toast Styles
+  // Toast modal — CORREGIDO: posición relativa al contenedor, no hardcoded
   toastModal: {
     position: 'absolute',
-    bottom: 680,
+    top: 24,
     left: 24,
     right: 24,
     flexDirection: 'row',
@@ -770,32 +773,7 @@ const styles = StyleSheet.create({
   },
   toastModalTexto: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
 
-  toastGlobal: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    zIndex: 999,
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  toastGlobalTexto: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-
-  // Eliminación Modal Styles
+  // Eliminación
   modalEliminarOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',

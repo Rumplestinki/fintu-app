@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
@@ -23,23 +24,8 @@ import { useAuth } from '../../hooks/useAuth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { verificarPresupuestos } from '../../services/notificaciones';
 import BotonFintu from '../../components/BotonFintu';
-
-// ─── HELPERS ──────────────────────────────────────────────
-
-const formatearFechaISO = (date) => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatearFechaLegible = (fechaISO) => {
-  const [año, mes, dia] = fechaISO.split('-');
-  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
-                 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  return `${dia} ${meses[parseInt(mes) - 1]} ${año}`;
-};
+import Toast from '../../components/Toast';
+import { formatearFechaISO, formatearFechaLegible } from '../../utils/fecha';
 
 // ─── COMPONENTE: CATEGORIA ANIMADA ────────────────────────
 
@@ -87,39 +73,11 @@ function CategoriaAnimada({ cat, seleccionada, onPress }) {
   );
 }
 
-// ─── COMPONENTE TOAST ─────────────────────────────────────
-
-function Toast({ visible, mensaje, tipo = 'exito' }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    if (visible) {
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.delay(1800),
-        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible]);
-
-  if (!visible) return null;
-
-  return (
-    <Animated.View style={[
-      estilos.toast,
-      tipo === 'exito' ? estilos.toastExito : estilos.toastError,
-      { opacity },
-    ]}>
-      <Text style={estilos.toastEmoji}>{tipo === 'exito' ? '✅' : '❌'}</Text>
-      <Text style={estilos.toastTexto}>{mensaje}</Text>
-    </Animated.View>
-  );
-}
-
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 
 export default function AgregarGasto() {
   const { usuario } = useAuth();
+  const insets = useSafeAreaInsets();
   const [monto, setMonto] = useState('');
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [descripcion, setDescripcion] = useState('');
@@ -237,7 +195,7 @@ const handleGuardar = async () => {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Header ── */}
-        <View style={estilos.header}>
+        <View style={[estilos.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity style={estilos.btnCancelar} onPress={() => router.back()}>
             <Text style={estilos.txtCancelar}>✕</Text>
           </TouchableOpacity>
@@ -392,50 +350,12 @@ const estilos = StyleSheet.create({
     paddingBottom: 80,
   },
 
-  // Toast
-  toast: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    zIndex: 999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  toastExito: {
-    backgroundColor: '#1A2A1A',
-    borderWidth: 1,
-    borderColor: COLORS.success,
-  },
-  toastError: {
-    backgroundColor: '#2A1A1A',
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
-  toastEmoji: { fontSize: 18 },
-  toastTexto: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-
   // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 20,
   },
   btnCancelar: {
