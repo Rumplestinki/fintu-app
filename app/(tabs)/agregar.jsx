@@ -169,46 +169,59 @@ export default function AgregarGasto() {
   };
 
   // ── Guardar gasto ──
-  const handleGuardar = async () => {
-    // hap.guardar() se eliminó de aquí porque BotonFintu lo maneja al tocar
+const handleGuardar = async () => {
+  if (!monto || parseFloat(monto) === 0) {
+    hap.error();
+    mostrarToast('Escribe el monto primero', 'error');
+    return;
+  }
+  if (!categoriaSeleccionada) {
+    hap.error();
+    mostrarToast('Elige una categoría', 'error');
+    return;
+  }
 
-    if (!monto || parseFloat(monto) === 0) {
-      hap.error();
-      mostrarToast('Escribe el monto primero', 'error');
-      return;
-    }
-    if (!categoriaSeleccionada) {
-      hap.error();
-      mostrarToast('Elige una categoría', 'error');
-      return;
-    }
+  setGuardando(true);
+  try {
+    await crearGasto({
+      userId: usuario?.id,
+      monto: parseFloat(monto),
+      categoriaId: categoriaSeleccionada.dbId,
+      descripcion,
+      fecha,
+      origen: 'manual',
+    });
 
-    setGuardando(true);
-    try {
-      await crearGasto({
-        userId: usuario?.id,
-        monto: parseFloat(monto),
-        categoriaId: categoriaSeleccionada.dbId,
-        descripcion,
-        fecha,
-        origen: 'manual',
-      });
+    // ✅ Esperar resultado para mostrar alerta si excede presupuesto
+    const alertas = await verificarPresupuestos();
+    const alertaCritica = alertas?.find(
+      (a) => a.tipo === 'error' || a.tipo === 'advertencia'
+    );
 
-      verificarPresupuestos();
+    hap.logro();
 
-      hap.logro();
+    if (alertaCritica) {
+      // Mostrar alerta de presupuesto en lugar del toast genérico
+      mostrarToast(`⚠️ ${alertaCritica.mensaje}`, 'error');
+    } else {
       mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
-
-      setTimeout(() => {
-        router.replace('/(tabs)/');
-      }, 2200);
-
-    } catch (error) {
-      console.error('Error al guardar gasto:', error);
-      mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
-      setGuardando(false);
     }
-  };
+
+    // ✅ Resetear guardando antes de navegar
+    setGuardando(false);
+
+    setTimeout(() => {
+      router.replace('/(tabs)/');
+    }, 2200);
+
+  } catch (error) {
+    console.error('Error al guardar gasto:', error);
+    mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
+  } finally {
+    // ✅ Garantiza que guardando siempre vuelve a false
+    setGuardando(false);
+  }
+};
 
   // ─── RENDER ───────────────────────────────────────────────
   return (
