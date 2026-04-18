@@ -1,7 +1,7 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — Registro por voz instantáneo y cálculo de neto real
+// Dashboard principal de Fintú — Soft Dark Luxury
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
@@ -43,9 +44,7 @@ function useContadorAnimado(valorFinal, duracion, delay) {
   const animRef = useRef(null);
 
   useEffect(() => {
-    // Detener animación anterior antes de iniciar una nueva
     if (animRef.current) animRef.current.stop();
-
     animValue.setValue(0);
     setConteo(0);
 
@@ -62,12 +61,54 @@ function useContadorAnimado(valorFinal, duracion, delay) {
     });
     animRef.current.start();
 
-    return () => {
-      animValue.removeListener(idListener);
-    };
+    return () => { animValue.removeListener(idListener); };
   }, [valorFinal]);
 
   return conteo;
+}
+
+// ─── BARRA DE CATEGORÍA ANIMADA ──────────────────────────
+
+function BarraCategoriaItem({ categoria, monto, total, delay }) {
+  const pct = total > 0 ? Math.min((monto / total) * 100, 100) : 0;
+  const barAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    barAnim.setValue(0);
+    Animated.timing(barAnim, {
+      toValue: pct,
+      duration: 700,
+      delay: delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [pct]);
+
+  return (
+    <View style={estilos.catBar}>
+      <View style={[estilos.catBarIcon, { backgroundColor: categoria.color + '2E' }]}>
+        <Text style={{ fontSize: 16 }}>{categoria.icono}</Text>
+      </View>
+      <View style={estilos.catBarBody}>
+        <View style={estilos.catBarHead}>
+          <Text style={estilos.catBarName}>{categoria.nombre}</Text>
+          <Text style={estilos.catBarAmt}>{formatMXN(monto)}</Text>
+        </View>
+        <View style={estilos.catBarTrack}>
+          <Animated.View
+            style={[
+              estilos.catBarFill,
+              {
+                width: barAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+                backgroundColor: categoria.color,
+              },
+            ]}
+          />
+        </View>
+      </View>
+      <Text style={estilos.catBarPct}>{Math.round(pct)}%</Text>
+    </View>
+  );
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
@@ -83,14 +124,14 @@ export default function Dashboard() {
   const [refrescando, setRefrescando] = useState(false);
   const [presupuestoMes, setPresupuestoMes] = useState(0);
   const [ingresosNetos, setIngresosNetos] = useState(0);
+  const [gastosPorCategoria, setGastosPorCategoria] = useState({});
 
   // Estados para disparar animaciones
   const [gastadoAnimado, setGastadoAnimado] = useState(0);
   const [ingresosAnimado, setIngresosAnimado] = useState(0);
 
-  // Valores animados de UI
-  const opacityAnim = useRef(new Animated.Value(0.75)).current;
-  const barraAnim = useRef(new Animated.Value(0)).current;
+  // Animación del sonar del FAB de voz
+  const sonarAnim = useRef(new Animated.Value(0)).current;
 
   // Hooks de contador animado
   const gastoContado = useContadorAnimado(gastadoAnimado, 1000, 0);
@@ -119,6 +160,32 @@ export default function Dashboard() {
     setToastVisible(false);
     setTimeout(() => setToastVisible(true), 50);
   };
+
+  // Saludo contextual según la hora del día
+  const saludoHora = useMemo(() => {
+    const hora = new Date().getHours();
+    if (hora < 12) return 'Buenos días';
+    if (hora < 20) return 'Buenas tardes';
+    return 'Buenas noches';
+  }, []);
+
+  // Animación sonar del FAB de voz
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(sonarAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+        Animated.timing(sonarAnim, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  // Top categorías para las barras del dashboard
+  const topCategorias = useMemo(() => {
+    return Object.entries(gastosPorCategoria)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([dbId, total]) => ({ categoria: getCategoriaByDbId(parseInt(dbId)), total }));
+  }, [gastosPorCategoria]);
 
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
@@ -169,7 +236,7 @@ export default function Dashboard() {
       }
       setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo });
 
-      // RENDIMIENTO: parallelizar las 3 queries independientes
+      // RENDIMIENTO: 3 queries en paralelo
       const [gastosDelMes, recientes, presupuestosData] = await Promise.all([
         obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
         obtenerUltimosGastos(5, inicio, fin),
@@ -179,6 +246,15 @@ export default function Dashboard() {
       totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
       setUltimosGastos(recientes);
+
+      // Agregación de gastos por categoría para las barras
+      const totalesCat = {};
+      gastosDelMes.forEach(g => {
+        if (g.categoria_id) {
+          totalesCat[g.categoria_id] = (totalesCat[g.categoria_id] || 0) + parseFloat(g.monto);
+        }
+      });
+      setGastosPorCategoria(totalesCat);
 
       const totalPresupuestado = presupuestosData.reduce(
         (sum, p) => sum + parseFloat(p.limite), 0
@@ -197,32 +273,12 @@ export default function Dashboard() {
     }
   };
 
-  // Disparar animaciones al cargar
   useEffect(() => {
     if (!cargando && gastadoAnimado >= 0) {
-      const porcentaje = presupuestoMes > 0 ? Math.round((gastadoAnimado / presupuestoMes) * 100) : 0;
-
-      opacityAnim.setValue(0.75);
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 1000,
-        useNativeDriver: true,
-      }).start();
-
-      barraAnim.setValue(0);
-      Animated.timing(barraAnim, {
-        toValue: Math.min(porcentaje, 100),
-        duration: 800,
-        delay: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-
       const timer = setTimeout(() => hap.suave(), 1000);
       return () => clearTimeout(timer);
     }
-  }, [gastadoAnimado, presupuestoMes, cargando]);
+  }, [gastadoAnimado, cargando]);
 
   const actualizarAlertas = async () => {
     const nuevasAlertas = await verificarPresupuestos();
@@ -284,96 +340,127 @@ export default function Dashboard() {
     }
   };
 
-  const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
-
-  // UX: inicial de avatar — mostrar "?" mientras carga
   const inicialAvatar = nombreUsuario ? nombreUsuario.charAt(0).toUpperCase() : '?';
 
   return (
     <View style={estilos.contenedor}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
-      {/* ── HEADER ── */}
-      <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
-        <View style={estilos.headerTop}>
-          <View>
-            <Text style={estilos.saludo}>
-              {cargando ? 'Cargando...' : `Hola, ${nombreUsuario} 👋`}
-            </Text>
-            <View style={estilos.periodoContenedor}>
-              <Text style={estilos.fechaMes}>{infoPeriodo.label}</Text>
-              {infoPeriodo.rango !== '' && (
-                <Text style={estilos.rangoPeriodo}>{infoPeriodo.rango}</Text>
-              )}
-            </View>
-          </View>
-          <TouchableOpacity style={estilos.avatar} onPress={() => router.push('/(tabs)/perfil')}>
-            <Text style={estilos.avatarTexto}>{inicialAvatar}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
-        {cargando ? <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} /> : (
-          <>
-            <Animated.Text style={[estilos.montoBalance, { opacity: opacityAnim }]}>
-              {formatMXN(gastoContado)}
-            </Animated.Text>
-            <Text style={estilos.subBalance}>de {formatMXN(presupuestoMes)} presupuestados</Text>
-          </>
-        )}
-
-        <View style={estilos.barraBg}>
-          <Animated.View style={[
-            estilos.barraRelleno,
-            {
-              width: barraAnim.interpolate({
-                inputRange: [0, 100],
-                outputRange: ['0%', '100%'],
-              }),
-              backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff',
-            },
-          ]} />
-        </View>
-        <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
-      </View>
-
-      {/* ── SCROLL ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.scroll}
-        refreshControl={<RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
+          />
+        }
       >
-        <View style={estilos.seccion}>
-          <View style={estilos.tarjetasGrid}>
-            <View style={estilos.tarjetaMini}>
-              <Text style={estilos.tarjetaMiniLabel}>Ingresos Netos</Text>
-              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>
-                {cargando ? '$---' : formatMXN(ingresosContado)}
-              </Text>
-            </View>
-            <View style={estilos.tarjetaMini}>
-              <Text style={estilos.tarjetaMiniLabel}>Disponible</Text>
-              <Text style={[
-                estilos.tarjetaMiniMonto,
-                { color: disponibleCalc < 0 ? COLORS.error : COLORS.textPrimary },
-              ]}>
-                {cargando ? '$---' : formatMXN(disponibleContado)}
-              </Text>
-            </View>
+        {/* ── HEADER ── */}
+        <View style={[estilos.header, { paddingTop: insets.top + 16 }]}>
+          <View style={estilos.headerLeft}>
+            <Text style={estilos.saludoTxt}>{saludoHora}</Text>
+            <Text style={estilos.nombreTxt}>
+              {cargando ? 'Cargando...' : nombreUsuario}{' '}
+              <Text style={{ opacity: 0.8 }}>👋</Text>
+            </Text>
+          </View>
+          <View style={estilos.headerRight}>
+            <TouchableOpacity style={estilos.iconBtn}>
+              <Ionicons name="notifications-outline" size={20} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={estilos.avatar}
+              onPress={() => router.push('/(tabs)/perfil')}
+            >
+              <Text style={estilos.avatarTxt}>{inicialAvatar}</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
+        {/* ── BALANCE CARD ── */}
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={estilos.balanceCard}
+        >
+          <View style={estilos.balanceRow1}>
+            <Text style={estilos.balanceLabel}>Balance disponible</Text>
+            {infoPeriodo.label ? (
+              <View style={estilos.mesBadge}>
+                <Text style={estilos.mesBadgeTxt}>{infoPeriodo.label}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {cargando ? (
+            <ActivityIndicator color="#fff" style={{ marginVertical: 14 }} />
+          ) : (
+            <Text style={estilos.balanceMonto}>
+              {formatMXN(disponibleContado)}
+            </Text>
+          )}
+
+          {presupuestoMes > 0 && !cargando && (
+            <View style={estilos.trendBadge}>
+              <Text style={estilos.trendTxt}>
+                ▲ {Math.round((gastadoMes / presupuestoMes) * 100)}% del presupuesto
+              </Text>
+            </View>
+          )}
+
+          <View style={estilos.balanceSub}>
+            <View style={estilos.balanceSubItem}>
+              <Text style={estilos.balanceSubLabel}>Ingresos</Text>
+              <Text style={[estilos.balanceSubValue, { color: '#A0FFD6' }]}>
+                {cargando ? '---' : formatMXN(ingresosContado)}
+              </Text>
+            </View>
+            <View style={estilos.balanceSubDivider} />
+            <View style={estilos.balanceSubItem}>
+              <Text style={estilos.balanceSubLabel}>Gastos</Text>
+              <Text style={estilos.balanceSubValue}>
+                {cargando ? '---' : formatMXN(gastoContado)}
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* ── ALERTAS ── */}
         {alertas.length > 0 && (
           <AlertaPresupuesto alertas={alertas} onDismiss={handleDismissAlerta} />
         )}
 
+        {/* ── GASTOS DEL MES POR CATEGORÍA ── */}
+        {topCategorias.length > 0 && (
+          <View style={estilos.seccion}>
+            <View style={estilos.seccionHeader}>
+              <Text style={estilos.seccionTitulo}>Gastos del mes</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
+                <Text style={estilos.verTodos}>Ver todo →</Text>
+              </TouchableOpacity>
+            </View>
+            {topCategorias.map(({ categoria, total }, i) => (
+              <BarraCategoriaItem
+                key={categoria.id}
+                categoria={categoria}
+                monto={total}
+                total={gastadoMes}
+                delay={i * 80}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* ── ÚLTIMOS MOVIMIENTOS ── */}
         <View style={estilos.seccion}>
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
-              <Text style={estilos.verTodos}>Ver todos</Text>
+              <Text style={estilos.verTodos}>Ver todos →</Text>
             </TouchableOpacity>
           </View>
           {cargando ? (
@@ -385,26 +472,48 @@ export default function Dashboard() {
             </View>
           ) : (
             ultimosGastos.map(g => (
-              <GastoItem key={g.id} gasto={g} categoria={getCategoriaByDbId(g.categoria_id)} />
+              <GastoItem
+                key={g.id}
+                gasto={g}
+                categoria={getCategoriaByDbId(g.categoria_id)}
+                onPress={() => router.push('/(tabs)/gastos')}
+              />
             ))
           )}
         </View>
-        <View style={{ height: 180 }} />
+
+        <View style={{ height: 160 }} />
       </ScrollView>
 
-      {/* ── BOTONES FLOTANTES ── */}
-      <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
-        <BotonFintu
-          label="+ Agregar gasto"
-          onPress={() => router.push('/(tabs)/agregar')}
-          estilo={{ flex: 1 }}
+      {/* ── FAB DE VOZ FLOTANTE ── */}
+      <View style={[estilos.voiceFab, { bottom: insets.bottom + 108 }]}>
+        {/* Anillo sonar */}
+        <Animated.View
+          style={[
+            estilos.sonarRing,
+            {
+              opacity: sonarAnim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.4, 0, 0],
+              }),
+              transform: [{
+                scale: sonarAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, 2.2],
+                }),
+              }],
+            },
+          ]}
         />
         <TouchableOpacity
-          style={estilos.btnVozFlotante}
-          onPress={() => { hap.guardar(); setModalVozVisible(true); }}
+          style={estilos.voiceFabBtn}
+          onLongPress={() => { hap.guardar(); setModalVozVisible(true); }}
+          delayLongPress={500}
+          activeOpacity={0.8}
         >
-          <Ionicons name="mic" size={24} color={COLORS.primary} />
+          <Ionicons name="mic" size={22} color={COLORS.primary} />
         </TouchableOpacity>
+        <Text style={estilos.voiceFabLabel}>mantén presionado</Text>
       </View>
 
       {/* ── MODAL DE VOZ ── */}
@@ -429,7 +538,9 @@ export default function Dashboard() {
               {guardandoVoz ? (
                 <View style={{ alignItems: 'center', gap: 12 }}>
                   <ActivityIndicator size="large" color={COLORS.primary} />
-                  <Text style={{ fontSize: 14, color: COLORS.textSecondary }}>Analizando y guardando...</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textSecondary }}>
+                    Analizando y guardando...
+                  </Text>
                 </View>
               ) : (
                 <BotonVoz onResultado={handleResultadoVoz} tamaño="grande" />
@@ -451,71 +562,398 @@ export default function Dashboard() {
   );
 }
 
-function GastoItem({ gasto, categoria }) {
+// ─── COMPONENTE: GASTO ITEM ─────────────────────────────
+
+function GastoItem({ gasto, categoria, onPress }) {
   return (
     <TouchableOpacity
       style={estilos.gastoItem}
-      onPress={() => hap.suave()}
+      onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}>
+      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '2E' }]}>
         <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
       </View>
       <View style={estilos.gastoInfo}>
         <Text style={estilos.gastoDescripcion} numberOfLines={1}>
           {gasto.descripcion || categoria.nombre}
         </Text>
-        <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
+        <View style={estilos.gastoMeta}>
+          <Text style={estilos.gastoCategoria}>{categoria.nombre}</Text>
+          <View style={estilos.metaDot} />
+          <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
+        </View>
       </View>
-      <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
+      <Text style={estilos.gastoMonto}>−{formatMXN(gasto.monto)}</Text>
     </TouchableOpacity>
   );
 }
 
+// ─── ESTILOS ──────────────────────────────────────────────
+
 const estilos = StyleSheet.create({
-  contenedor: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { flexGrow: 1 },
-  header: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingBottom: 28 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
-  periodoContenedor: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
-  rangoPeriodo: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '500', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  avatarTexto: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  etiquetaBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
-  montoBalance: { fontSize: 34, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
-  subBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  barraBg: { marginTop: 14, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden' },
-  barraRelleno: { height: '100%', borderRadius: 3 },
-  porcentajeTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'right' },
-  seccion: { paddingHorizontal: 16, marginTop: 16 },
-  seccionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seccionTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
-  verTodos: { fontSize: 12, color: COLORS.primary },
-  tarjetasGrid: { flexDirection: 'row', gap: 10 },
-  tarjetaMini: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 14 },
-  tarjetaMiniLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
-  tarjetaMiniMonto: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
-  gastoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, marginBottom: 8, gap: 12 },
-  gastoIcono: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  gastoEmoji: { fontSize: 18 },
-  gastoInfo: { flex: 1 },
-  gastoDescripcion: { fontSize: 13, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 2 },
-  gastoFecha: { fontSize: 11, color: COLORS.textSecondary },
-  gastoMonto: { fontSize: 13, fontWeight: '600', color: COLORS.error },
-  estadoVacio: { alignItems: 'center', paddingVertical: 40 },
-  estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
-  estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
-  botonesFlotantes: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 12, alignItems: 'center' },
-  btnVozFlotante: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContenido: { backgroundColor: COLORS.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 48, alignItems: 'center' },
-  modalHandleContenedor: { paddingVertical: 8, paddingHorizontal: 40, alignItems: 'center' },
-  modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
-  modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
-  modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },
-  modalBotonVoz: { marginBottom: 20, alignItems: 'center' },
-  btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
-  btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
+  contenedor: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scroll: {
+    flexGrow: 1,
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  saludoTxt: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  nombreTxt: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarTxt: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
+
+  // Balance card
+  balanceCard: {
+    marginHorizontal: 20,
+    padding: 24,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  balanceRow1: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
+  mesBadge: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  mesBadgeTxt: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+  },
+  balanceMonto: {
+    fontSize: 42,
+    fontWeight: '300',
+    color: '#fff',
+    letterSpacing: -1,
+    lineHeight: 50,
+    marginBottom: 10,
+  },
+  trendBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,212,170,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 20,
+  },
+  trendTxt: {
+    fontSize: 12,
+    color: '#A0FFD6',
+    fontWeight: '500',
+  },
+  balanceSub: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    paddingTop: 16,
+  },
+  balanceSubItem: {
+    flex: 1,
+  },
+  balanceSubDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginHorizontal: 16,
+  },
+  balanceSubLabel: {
+    fontSize: 10,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.65)',
+    marginBottom: 4,
+  },
+  balanceSubValue: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#fff',
+  },
+
+  // Sección genérica
+  seccion: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+  },
+  seccionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 14,
+  },
+  seccionTitulo: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
+  },
+  verTodos: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+
+  // Barras de categorías
+  catBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  catBarIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  catBarBody: {
+    flex: 1,
+  },
+  catBarHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 6,
+  },
+  catBarName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.textPrimary,
+  },
+  catBarAmt: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  catBarTrack: {
+    height: 6,
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  catBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  catBarPct: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    width: 32,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Transacciones
+  gastoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: 14,
+  },
+  gastoIcono: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  gastoEmoji: {
+    fontSize: 18,
+  },
+  gastoInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  gastoDescripcion: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.textPrimary,
+    marginBottom: 3,
+  },
+  gastoMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gastoCategoria: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  metaDot: {
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: COLORS.textMuted,
+  },
+  gastoFecha: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  gastoMonto: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: COLORS.coral,
+    flexShrink: 0,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Estado vacío
+  estadoVacio: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  estadoVacioEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  estadoVacioTitulo: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+
+  // FAB de voz flotante
+  voiceFab: {
+    position: 'absolute',
+    right: 20,
+    alignItems: 'center',
+    gap: 6,
+  },
+  sonarRing: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(108,99,255,0.4)',
+  },
+  voiceFabBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(108,99,255,0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(108,99,255,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceFabLabel: {
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: COLORS.textMuted,
+    textTransform: 'lowercase',
+  },
+
+  // Modal de voz
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContenido: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 48,
+    alignItems: 'center',
+  },
+  modalHandleContenedor: {
+    paddingVertical: 8,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    marginBottom: 16,
+  },
+  modalTitulo: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  modalSubtitulo: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 28,
+  },
+  modalBotonVoz: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  btnCancelarModal: {
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+  },
+  btnCancelarTexto: {
+    fontSize: 15,
+    color: COLORS.textSecondary,
+  },
 });

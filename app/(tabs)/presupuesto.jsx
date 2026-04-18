@@ -34,10 +34,11 @@ function BarraPresupuesto({ gastado, limite, delay = 0 }) {
   const porcentaje = limite > 0 ? Math.min((gastado / limite) * 100, 100) : 0;
   const anchoAnim = useRef(new Animated.Value(0)).current;
 
+  // 0-70% verde, 70-90% ámbar, >90% rojo
   const colorBarra =
-    porcentaje >= 100 ? COLORS.error :
-    porcentaje >= 80  ? COLORS.warning :
-    COLORS.primary;
+    porcentaje >= 90 ? COLORS.error :
+    porcentaje >= 70 ? COLORS.warning :
+    COLORS.success;
 
   useEffect(() => {
     anchoAnim.setValue(0);
@@ -297,7 +298,7 @@ export default function PresupuestoScreen() {
                 <Text style={styles.resumenLabel}>Gastado</Text>
                 <Text style={[
                   styles.resumenMonto,
-                  { color: porcentajeGeneral >= 100 ? COLORS.error : COLORS.textPrimary },
+                  { color: porcentajeGeneral >= 90 ? COLORS.error : COLORS.textPrimary },
                 ]}>
                   {formatMXN(totalGastado)}
                 </Text>
@@ -311,9 +312,9 @@ export default function PresupuestoScreen() {
                         inputRange: [0, 100],
                         outputRange: ['0%', '100%'],
                       }),
-                      backgroundColor: porcentajeGeneral >= 100 ? COLORS.error
-                        : porcentajeGeneral >= 80 ? COLORS.warning
-                        : COLORS.primary,
+                      backgroundColor: porcentajeGeneral >= 90 ? COLORS.error
+                        : porcentajeGeneral >= 70 ? COLORS.warning
+                        : COLORS.success,
                     },
                   ]}
                 />

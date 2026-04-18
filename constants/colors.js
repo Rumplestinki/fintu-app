@@ -1,30 +1,32 @@
 // constants/colors.js
-// Paleta de colores oficial de Fintú
-// Usada en todas las pantallas para mantener consistencia visual
+// Paleta Soft Dark Luxury — nuevo diseño Fintú
+// Mantener EXACTAMENTE los mismos nombres de claves para no romper componentes existentes
 
 export const COLORS = {
   // Colores principales
-  primary: '#6C63FF',       // Púrpura principal
-  primaryLight: '#8B85FF',  // Púrpura claro (hover/pressed)
-  primaryDark: '#4B44CC',   // Púrpura oscuro
+  primary: '#6C63FF',
+  primaryLight: '#8B85FF',
+  primaryDark: '#4B3FCC',
 
-  // Fondos (dark mode)
-  background: '#0F0F14',    // Fondo principal muy oscuro
-  surface: '#1A1A24',       // Tarjetas y superficies
-  surfaceLight: '#252535',  // Superficies secundarias
+  // Fondos (dark mode profundo)
+  background: '#0A0A12',
+  surface: '#12121E',
+  surfaceLight: '#1A1A2E',
 
   // Texto
-  textPrimary: '#FFFFFF',   // Texto principal
-  textSecondary: '#9898B0', // Texto secundario / labels
-  textMuted: '#5A5A70',     // Texto muy tenue
+  textPrimary: '#FFFFFF',
+  textSecondary: '#8888A8',
+  textMuted: '#5A5A70',
 
   // Estados
-  success: '#4CAF50',
+  success: '#00D4AA',
   error: '#FF5252',
   warning: '#FFB300',
+  coral: '#FF6B6B',
 
   // Bordes
-  border: '#2A2A3A',
+  border: '#252538',
+  borderStrong: '#33334A',
   borderFocus: '#6C63FF',
 
   // Misceláneos

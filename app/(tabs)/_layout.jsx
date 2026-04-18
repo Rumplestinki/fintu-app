@@ -1,5 +1,5 @@
 // app/(tabs)/_layout.jsx
-// Rediseño premium de la barra de navegación inferior de Fintú
+// Tab bar premium de Fintú — paleta Soft Dark Luxury
 
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Dimensions } from 'react-native';
@@ -17,7 +17,7 @@ const TAB_WIDTH = width / 5;
 // ──────────────────────────────────────────
 function MiTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
-  
+
   // Valor animado para la posición X del punto indicador
   const posicionPunto = useRef(new Animated.Value(0)).current;
 
@@ -33,13 +33,11 @@ function MiTabBar({ state, descriptors, navigation }) {
 
   return (
     <View style={[styles.tabBarContainer, { paddingBottom: insets.bottom + 10 }]}>
-      {/* Punto indicador (Píldora deslizante) */}
+      {/* Punto indicador deslizante */}
       <Animated.View
         style={[
           styles.puntoIndicador,
-          {
-            transform: [{ translateX: posicionPunto }],
-          },
+          { transform: [{ translateX: posicionPunto }] },
         ]}
       >
         <View style={styles.punto} />
@@ -47,7 +45,12 @@ function MiTabBar({ state, descriptors, navigation }) {
 
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
-        const label = options.tabBarLabel !== undefined ? options.tabBarLabel : options.title !== undefined ? options.title : route.name;
+        const label =
+          options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+            ? options.title
+            : route.name;
         const isFocused = state.index === index;
 
         const onPress = () => {
@@ -58,7 +61,6 @@ function MiTabBar({ state, descriptors, navigation }) {
           });
 
           if (!isFocused && !event.defaultPrevented) {
-            // Feedback Háptico diferenciado
             if (route.name === 'agregar') {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             } else {
@@ -83,22 +85,19 @@ function MiTabBar({ state, descriptors, navigation }) {
 }
 
 // ──────────────────────────────────────────
-// Componente: TabItem (Cada botón individual)
+// Componente: TabItem
 // ──────────────────────────────────────────
 function TabItem({ label, isFocused, onPress, routeName }) {
   const scaleAnim = useRef(new Animated.Value(isFocused ? 1.18 : 1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Animación de escala cuando cambia el foco
   useEffect(() => {
     if (isFocused) {
-      // Efecto de rebote al entrar
       Animated.sequence([
         Animated.spring(scaleAnim, { toValue: 1.25, useNativeDriver: true, friction: 4 }),
         Animated.spring(scaleAnim, { toValue: 1.18, useNativeDriver: true, friction: 4 }),
       ]).start();
 
-      // Si es el botón de agregar y está activo, iniciar pulso
       if (routeName === 'agregar') {
         Animated.loop(
           Animated.sequence([
@@ -113,7 +112,6 @@ function TabItem({ label, isFocused, onPress, routeName }) {
     }
   }, [isFocused]);
 
-  // Manejar el "click" con un pequeño scale down
   const handlePress = () => {
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 0.92, duration: 100, useNativeDriver: true }),
@@ -122,26 +120,27 @@ function TabItem({ label, isFocused, onPress, routeName }) {
     onPress();
   };
 
-  // Determinar ícono según la ruta
   const getIcon = (focused) => {
     switch (routeName) {
-      case 'index': return focused ? 'home' : 'home-outline';
-      case 'gastos': return focused ? 'list' : 'list-outline';
-      case 'agregar': return 'add'; // El de agregar siempre es sólido
+      case 'index':       return focused ? 'home' : 'home-outline';
+      case 'gastos':      return focused ? 'list' : 'list-outline';
+      case 'agregar':     return 'add';
       case 'presupuesto': return focused ? 'pie-chart' : 'pie-chart-outline';
-      case 'perfil': return focused ? 'person' : 'person-outline';
-      default: return 'help-circle';
+      case 'perfil':      return focused ? 'person' : 'person-outline';
+      default:            return 'help-circle';
     }
   };
 
-  // Render especial para el botón de Agregar
+  // Botón central de Agregar
   if (routeName === 'agregar') {
     return (
       <Pressable onPress={handlePress} style={styles.tabItem}>
-        <Animated.View style={[
-          styles.botonAgregarCentral,
-          { transform: [{ scale: Animated.multiply(scaleAnim, pulseAnim) }] }
-        ]}>
+        <Animated.View
+          style={[
+            styles.botonAgregarCentral,
+            { transform: [{ scale: Animated.multiply(scaleAnim, pulseAnim) }] },
+          ]}
+        >
           <Ionicons name="add" size={32} color="#FFF" />
         </Animated.View>
         <Text style={[styles.label, isFocused && styles.labelActivo]}>Agregar</Text>
@@ -155,7 +154,7 @@ function TabItem({ label, isFocused, onPress, routeName }) {
         <Ionicons
           name={getIcon(isFocused)}
           size={24}
-          color={isFocused ? COLORS.primary : '#888'}
+          color={isFocused ? COLORS.primary : COLORS.textMuted}
         />
       </Animated.View>
       <Text style={[styles.label, isFocused && styles.labelActivo]}>
@@ -166,21 +165,19 @@ function TabItem({ label, isFocused, onPress, routeName }) {
 }
 
 // ──────────────────────────────────────────
-// Layout Principal de Tabs
+// Layout principal de Tabs
 // ──────────────────────────────────────────
 export default function TabsLayout() {
   return (
     <Tabs
       tabBar={(props) => <MiTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-      }}
+      screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
-      <Tabs.Screen name="gastos" options={{ title: 'Gastos' }} />
-      <Tabs.Screen name="agregar" options={{ title: 'Agregar' }} />
+      <Tabs.Screen name="index"       options={{ title: 'Inicio' }} />
+      <Tabs.Screen name="gastos"      options={{ title: 'Gastos' }} />
+      <Tabs.Screen name="agregar"     options={{ title: 'Agregar' }} />
       <Tabs.Screen name="presupuesto" options={{ title: 'Plan' }} />
-      <Tabs.Screen name="perfil" options={{ title: 'Perfil' }} />
+      <Tabs.Screen name="perfil"      options={{ title: 'Perfil' }} />
     </Tabs>
   );
 }
@@ -191,17 +188,16 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBarContainer: {
     flexDirection: 'row',
-    backgroundColor: '#0F0F0F',
+    backgroundColor: COLORS.surface,
     height: 75,
     borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: COLORS.border,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    // Sombra sutil para Android/iOS
     elevation: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
@@ -221,9 +217,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -35, // Elevación visual
+    marginTop: -35,
     borderWidth: 4,
-    borderColor: '#0F0F0F',
+    borderColor: COLORS.surface,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -232,7 +228,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 10,
-    color: '#888',
+    color: COLORS.textMuted,
     marginTop: 4,
     fontWeight: '500',
   },

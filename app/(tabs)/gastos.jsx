@@ -1,7 +1,7 @@
 // /app/(tabs)/gastos.jsx
 // Pantalla de historial de gastos con filtros por periodo y categoría
 
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Easing,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -120,6 +121,26 @@ export default function HistorialScreen() {
   const [toastModalVisible, setToastModalVisible] = useState(false);
   const [toastModalTipo, setToastModalTipo] = useState('error');
   const toastModalOpacity = useRef(new Animated.Value(0)).current;
+
+  // Barra de búsqueda colapsable con animación de altura
+  const [busquedaVisible, setBusquedaVisible] = useState(false);
+  const searchHeightAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleBusqueda = () => {
+    const nuevaVisible = !busquedaVisible;
+    setBusquedaVisible(nuevaVisible);
+    Animated.timing(searchHeightAnim, {
+      toValue: nuevaVisible ? 56 : 0,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(() => {
+      if (!nuevaVisible) {
+        setBusqueda('');
+      }
+    });
+    hap.suave();
+  };
 
   // ── Cargar Gastos desde Supabase ──
   async function cargarGastos() {
@@ -300,7 +321,7 @@ export default function HistorialScreen() {
       {/* ── Cabecera ── */}
       <View style={styles.cabecera}>
         <View>
-          <Text style={styles.titulo}>Gastos</Text>
+          <Text style={styles.titulo}>Historial</Text>
           <Pressable
             style={styles.selectorPeriodo}
             onPress={() => { hap.suave(); setModalPeriodoVisible(true); }}
@@ -312,15 +333,24 @@ export default function HistorialScreen() {
             <Ionicons name="chevron-down" size={14} color={COLORS.primary} />
           </Pressable>
         </View>
-        <Pressable onPress={() => { hap.suave(); cargarGastos(); }}>
-          <Ionicons name="refresh-outline" size={24} color={COLORS.textSecondary} />
-        </Pressable>
+        <View style={styles.cabeceraAcciones}>
+          <Pressable style={styles.iconBtnHeader} onPress={toggleBusqueda}>
+            <Ionicons
+              name={busquedaVisible ? 'close' : 'search'}
+              size={20}
+              color={busquedaVisible ? COLORS.primary : COLORS.textSecondary}
+            />
+          </Pressable>
+          <Pressable style={styles.iconBtnHeader} onPress={() => { hap.suave(); cargarGastos(); }}>
+            <Ionicons name="refresh-outline" size={20} color={COLORS.textSecondary} />
+          </Pressable>
+        </View>
       </View>
 
-      {/* ── Filtros ── */}
-      <View style={styles.filtros}>
+      {/* ── Barra de búsqueda colapsable ── */}
+      <Animated.View style={[styles.searchRow, { height: searchHeightAnim, overflow: 'hidden' }]}>
         <View style={styles.barraBusqueda}>
-          <Ionicons name="search" size={18} color={COLORS.textMuted} />
+          <Ionicons name="search" size={16} color={COLORS.textMuted} />
           <TextInput
             style={styles.inputBusqueda}
             placeholder="Buscar por descripción..."
@@ -330,11 +360,14 @@ export default function HistorialScreen() {
           />
           {busqueda !== '' && (
             <Pressable onPress={() => setBusqueda('')}>
-              <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+              <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
             </Pressable>
           )}
         </View>
+      </Animated.View>
 
+      {/* ── Filtros por categoría ── */}
+      <View style={styles.filtros}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -350,6 +383,28 @@ export default function HistorialScreen() {
           ))}
         </ScrollView>
       </View>
+
+      {/* ── Resumen del período ── */}
+      {!cargando && gastosRaw.length > 0 && (
+        <View style={styles.periodoResumen}>
+          <Text style={styles.periodoResumenIzq}>
+            {gastosRaw.filter(g => {
+              const matchCat = categoriaActiva === 'todas' || Number(g.categoria_id) === Number(categoriaActiva);
+              const matchBusqueda = !busqueda ||
+                (g.descripcion || '').toLowerCase().includes(busqueda.toLowerCase());
+              return matchCat && matchBusqueda;
+            }).length} gastos
+          </Text>
+          <Text style={styles.periodoResumenTotal}>
+            −{formatMXN(gastosRaw.filter(g => {
+              const matchCat = categoriaActiva === 'todas' || Number(g.categoria_id) === Number(categoriaActiva);
+              const matchBusqueda = !busqueda ||
+                (g.descripcion || '').toLowerCase().includes(busqueda.toLowerCase());
+              return matchCat && matchBusqueda;
+            }).reduce((s, g) => s + parseFloat(g.monto), 0))}
+          </Text>
+        </View>
+      )}
 
       {/* ── Lista de Gastos ── */}
       {cargando && gastosRaw.length === 0 ? (
@@ -604,41 +659,78 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
   },
-  titulo: { fontSize: 28, fontWeight: '700', color: COLORS.textPrimary },
+  cabeceraAcciones: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  iconBtnHeader: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titulo: { fontSize: 22, fontWeight: '600', color: COLORS.textPrimary, letterSpacing: -0.5 },
   selectorPeriodo: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   periodoActivo: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
 
-  filtros: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 5 },
+  // Barra de búsqueda colapsable
+  searchRow: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
   barraBusqueda: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    marginHorizontal: 20,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    marginBottom: 15,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    height: 40,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  inputBusqueda: { flex: 1, marginLeft: 8, color: COLORS.textPrimary, fontSize: 15 },
+  inputBusqueda: { flex: 1, marginLeft: 8, color: COLORS.textPrimary, fontSize: 14 },
 
+  filtros: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 4 },
   scrollCategorias: { paddingLeft: 20, paddingRight: 10, paddingVertical: 5 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginRight: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
+    flexShrink: 0,
   },
   chipActivo: { backgroundColor: COLORS.primary + '15', borderColor: COLORS.primary },
-  emojiChip: { fontSize: 16, marginRight: 6 },
-  textoChip: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '500' },
+  emojiChip: { fontSize: 14, marginRight: 5 },
+  textoChip: { fontSize: 12.5, color: COLORS.textSecondary, fontWeight: '500' },
   textoChipActivo: { color: COLORS.primary, fontWeight: '600' },
+
+  // Resumen del período
+  periodoResumen: {
+    marginHorizontal: 20,
+    marginVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  periodoResumenIzq: { fontSize: 12, color: COLORS.textSecondary },
+  periodoResumenTotal: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
 
   headerSeccion: {
     backgroundColor: COLORS.background,
@@ -646,7 +738,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginTop: 10,
   },
-  textoHeaderSeccion: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, textTransform: 'uppercase' },
+  textoHeaderSeccion: { fontSize: 10, fontWeight: '600', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 1.2 },
   lista: { paddingHorizontal: 16, paddingBottom: 20 },
 
   contenedorCarga: { flex: 1, justifyContent: 'center', alignItems: 'center' },
