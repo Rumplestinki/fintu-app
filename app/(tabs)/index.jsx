@@ -1,7 +1,7 @@
 // app/(tabs)/index.jsx
 // Dashboard principal de Fintú — Registro por voz instantáneo y cálculo de neto real
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
+import { NOMBRES_MESES, formatearFechaGasto } from '../../utils/fecha';
+import { formatMXN } from '../../utils/formato';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
 import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
@@ -30,49 +32,20 @@ import BotonVoz from '../../components/BotonVoz';
 import AlertaPresupuesto from '../../components/AlertaPresupuesto';
 import { verificarPresupuestos } from '../../services/notificaciones';
 import BotonFintu from '../../components/BotonFintu';
-
-// ─── HELPERS ──────────────────────────────────────────────
-
-const formatMXN = (monto) =>
-  new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    minimumFractionDigits: 0,
-  }).format(monto || 0);
-
-const formatearFechaISO = (date) => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatearFechaGasto = (fechaISO) => {
-  if (!fechaISO) return '';
-  const hoy = new Date();
-  const fecha = new Date(fechaISO + 'T12:00:00');
-  const hoyStr = formatearFechaISO(hoy);
-  const ayerStr = formatearFechaISO(new Date(Date.now() - 86400000));
-  if (fechaISO === hoyStr) return 'Hoy';
-  if (fechaISO === ayerStr) return 'Ayer';
-  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  return `${fecha.getDate()} ${meses[fecha.getMonth()]}`;
-};
-
-const NOMBRES_MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
+import Toast from '../../components/Toast';
+import { toLocalISO } from '../../utils/fecha';
 
 // ─── HOOK DE ANIMACIÓN DE CONTADOR ─────────────────────────
 
 function useContadorAnimado(valorFinal, duracion, delay) {
   const [conteo, setConteo] = useState(0);
   const animValue = useRef(new Animated.Value(0)).current;
+  const animRef = useRef(null);
 
   useEffect(() => {
-    // Resetear valor al inicio cada vez que el valor final cambie
+    // Detener animación anterior antes de iniciar una nueva
+    if (animRef.current) animRef.current.stop();
+
     animValue.setValue(0);
     setConteo(0);
 
@@ -80,13 +53,14 @@ function useContadorAnimado(valorFinal, duracion, delay) {
       setConteo(Math.round(value));
     });
 
-    Animated.timing(animValue, {
+    animRef.current = Animated.timing(animValue, {
       toValue: valorFinal,
       duration: duracion,
       delay: delay,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: false, // Necesario false para usar el listener y actualizar estado
-    }).start();
+      useNativeDriver: false,
+    });
+    animRef.current.start();
 
     return () => {
       animValue.removeListener(idListener);
@@ -94,36 +68,6 @@ function useContadorAnimado(valorFinal, duracion, delay) {
   }, [valorFinal]);
 
   return conteo;
-}
-
-// ─── COMPONENTE TOAST ─────────────────────────────────────
-import React from 'react';
-
-function Toast({ visible, mensaje, tipo = 'exito' }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    if (visible) {
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.delay(2500),
-        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible]);
-
-  if (!visible) return null;
-
-  return (
-    <Animated.View style={[
-      estilos.toast,
-      tipo === 'exito' ? estilos.toastExito : estilos.toastError,
-      { opacity },
-    ]}>
-      <Text style={estilos.toastEmoji}>{tipo === 'exito' ? '✅' : '❌'}</Text>
-      <Text style={estilos.toastTexto} numberOfLines={2}>{mensaje}</Text>
-    </Animated.View>
-  );
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
@@ -139,11 +83,11 @@ export default function Dashboard() {
   const [refrescando, setRefrescando] = useState(false);
   const [presupuestoMes, setPresupuestoMes] = useState(0);
   const [ingresosNetos, setIngresosNetos] = useState(0);
-  
+
   // Estados para disparar animaciones
   const [gastadoAnimado, setGastadoAnimado] = useState(0);
   const [ingresosAnimado, setIngresosAnimado] = useState(0);
-  
+
   // Valores animados de UI
   const opacityAnim = useRef(new Animated.Value(0.75)).current;
   const barraAnim = useRef(new Animated.Value(0)).current;
@@ -154,10 +98,10 @@ export default function Dashboard() {
   const disponibleCalc = ingresosAnimado - gastadoAnimado;
   const disponibleContado = useContadorAnimado(disponibleCalc, 900, 240);
 
-  // Estados para Modal de Voz
+  // Modal de Voz
   const [modalVozVisible, setModalVozVisible] = useState(false);
   const [guardandoVoz, setGuardandoVoz] = useState(false);
-  
+
   const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
 
   // Alertas de presupuesto
@@ -180,8 +124,7 @@ export default function Dashboard() {
   const cargarDatos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
- 
-      // Leer perfil
+
       let diaCorte = 1;
       let netoMensual = 0;
       let totalMes = 0;
@@ -192,10 +135,9 @@ export default function Dashboard() {
           .select('nombre, ingreso_mensual, dia_corte, isr, imss, iva, vales_despensa, frecuencia_pago, fondo_ahorro')
           .eq('id', user.id)
           .single();
- 
+
         setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
-        
-        // Calcular neto real mensual proyectado
+
         const bruto = perfil?.ingreso_mensual || 0;
         const isr = perfil?.isr || 0;
         const imss = perfil?.imss || 0;
@@ -203,24 +145,21 @@ export default function Dashboard() {
         const vales = perfil?.vales_despensa || 0;
         const fondo = perfil?.fondo_ahorro || 0;
         const frecuencia = perfil?.frecuencia_pago || 'mensual';
-        
+
         const factor = frecuencia === 'quincenal' ? 2 : 1;
         netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
-        
+
         setIngresosNetos(netoMensual);
         diaCorte = perfil?.dia_corte || 1;
       }
- 
-      // Calcular el periodo actual basado en el día de corte
+
       const { inicio, fin } = calcularPeriodo(diaCorte, 0);
       const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
       const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
 
-      // El mes y año del presupuesto deben corresponder al INICIO del periodo
       const budgetMonth = mesIni;
       const budgetYear = anioIni;
 
-      // Actualizar info del periodo para el header
       let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
       let rangoPeriodo = '';
       if (diaCorte > 1) {
@@ -229,31 +168,28 @@ export default function Dashboard() {
         rangoPeriodo = `${diaIni} ${mesIniCorto} – ${diaFin} ${mesFinCorto}`;
       }
       setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo });
- 
-      // Obtener gastos del periodo
-      const gastosDelMes = await obtenerGastosMes(budgetMonth, budgetYear, diaCorte);
+
+      // RENDIMIENTO: parallelizar las 3 queries independientes
+      const [gastosDelMes, recientes, presupuestosData] = await Promise.all([
+        obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
+        obtenerUltimosGastos(5, inicio, fin),
+        obtenerPresupuestosMes(budgetMonth, budgetYear),
+      ]);
+
       totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
- 
-      // Filtrar los últimos 5 gastos pero DENTRO del periodo actual
-      const recientes = await obtenerUltimosGastos(5, inicio, fin);
       setUltimosGastos(recientes);
- 
-      // Obtener presupuestos usando el mes/año de inicio del periodo
-      const presupuestosData = await obtenerPresupuestosMes(budgetMonth, budgetYear);
+
       const totalPresupuestado = presupuestosData.reduce(
         (sum, p) => sum + parseFloat(p.limite), 0
       );
       setPresupuestoMes(totalPresupuestado);
 
-      // ── Disparar animaciones ──
       setCargando(false);
       setRefrescando(false);
-      
-      // Seteamos los valores que los hooks de animación observan
       setGastadoAnimado(totalMes);
       setIngresosAnimado(netoMensual);
- 
+
     } catch (error) {
       console.error('Error cargando dashboard:', error);
       setCargando(false);
@@ -261,12 +197,11 @@ export default function Dashboard() {
     }
   };
 
-  // Efecto secundario para disparar opacidad, barra y haptic
+  // Disparar animaciones al cargar
   useEffect(() => {
     if (!cargando && gastadoAnimado >= 0) {
       const porcentaje = presupuestoMes > 0 ? Math.round((gastadoAnimado / presupuestoMes) * 100) : 0;
 
-      // 1. Reiniciar y animar opacidad del número principal
       opacityAnim.setValue(0.75);
       Animated.timing(opacityAnim, {
         toValue: 1,
@@ -275,25 +210,20 @@ export default function Dashboard() {
         useNativeDriver: true,
       }).start();
 
-      // 2. Reiniciar y animar barra de presupuesto
       barraAnim.setValue(0);
       Animated.timing(barraAnim, {
         toValue: Math.min(porcentaje, 100),
         duration: 800,
         delay: 200,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: false, // false porque anima ancho en porcentaje
+        useNativeDriver: false,
       }).start();
 
-      // 3. Feedback háptico al terminar
-      const timer = setTimeout(() => {
-        hap.suave();
-      }, 1000);
+      const timer = setTimeout(() => hap.suave(), 1000);
       return () => clearTimeout(timer);
     }
   }, [gastadoAnimado, presupuestoMes, cargando]);
 
-  // ── Revisar alertas de presupuesto ──
   const actualizarAlertas = async () => {
     const nuevasAlertas = await verificarPresupuestos();
     const visibles = nuevasAlertas.filter(a => !alertasDismissed.current.has(a.id));
@@ -315,13 +245,12 @@ export default function Dashboard() {
     actualizarAlertas();
   };
 
-  // Cerrar una alerta (persiste solo durante la sesión)
   const handleDismissAlerta = (id) => {
     alertasDismissed.current.add(id);
     setAlertas(prev => prev.filter(a => a.id !== id));
   };
 
-  // ── Guardar gasto por voz AUTOMÁTICO ──
+  // ── Guardar gasto por voz ──
   const handleResultadoVoz = async (datos) => {
     if (!datos.monto || datos.monto === '0') {
       setModalVozVisible(false);
@@ -338,7 +267,7 @@ export default function Dashboard() {
         monto: parseFloat(datos.monto),
         categoriaId: datos.categoria?.dbId || 9,
         descripcion: datos.descripcion || '',
-        fecha: datos.fecha || formatearFechaISO(new Date()),
+        fecha: datos.fecha || toLocalISO(new Date()),
         origen: 'voz',
       });
 
@@ -351,12 +280,14 @@ export default function Dashboard() {
       console.error('Error guardando gasto por voz:', error);
       mostrarToast('No se pudo guardar el gasto. Intenta de nuevo.', 'error');
     } finally {
-      // ✅ SIEMPRE se ejecuta, sin importar si hubo error o no
       setGuardandoVoz(false);
     }
   };
 
   const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
+
+  // UX: inicial de avatar — mostrar "?" mientras carga
+  const inicialAvatar = nombreUsuario ? nombreUsuario.charAt(0).toUpperCase() : '?';
 
   return (
     <View style={estilos.contenedor}>
@@ -368,7 +299,9 @@ export default function Dashboard() {
       <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
         <View style={estilos.headerTop}>
           <View>
-            <Text style={estilos.saludo}>Hola, {nombreUsuario} 👋</Text>
+            <Text style={estilos.saludo}>
+              {cargando ? 'Cargando...' : `Hola, ${nombreUsuario} 👋`}
+            </Text>
             <View style={estilos.periodoContenedor}>
               <Text style={estilos.fechaMes}>{infoPeriodo.label}</Text>
               {infoPeriodo.rango !== '' && (
@@ -377,7 +310,7 @@ export default function Dashboard() {
             </View>
           </View>
           <TouchableOpacity style={estilos.avatar} onPress={() => router.push('/(tabs)/perfil')}>
-            <Text style={estilos.avatarTexto}>{nombreUsuario.charAt(0).toUpperCase()}</Text>
+            <Text style={estilos.avatarTexto}>{inicialAvatar}</Text>
           </TouchableOpacity>
         </View>
 
@@ -393,21 +326,25 @@ export default function Dashboard() {
 
         <View style={estilos.barraBg}>
           <Animated.View style={[
-            estilos.barraRelleno, 
-            { 
+            estilos.barraRelleno,
+            {
               width: barraAnim.interpolate({
                 inputRange: [0, 100],
-                outputRange: ['0%', '100%']
+                outputRange: ['0%', '100%'],
               }),
-              backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff' 
-            }
+              backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff',
+            },
           ]} />
         </View>
         <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
       </View>
 
       {/* ── SCROLL ── */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={estilos.scroll} refreshControl={<RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={estilos.scroll}
+        refreshControl={<RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+      >
         <View style={estilos.seccion}>
           <View style={estilos.tarjetasGrid}>
             <View style={estilos.tarjetaMini}>
@@ -419,8 +356,8 @@ export default function Dashboard() {
             <View style={estilos.tarjetaMini}>
               <Text style={estilos.tarjetaMiniLabel}>Disponible</Text>
               <Text style={[
-                estilos.tarjetaMiniMonto, 
-                { color: disponibleCalc < 0 ? COLORS.error : COLORS.textPrimary }
+                estilos.tarjetaMiniMonto,
+                { color: disponibleCalc < 0 ? COLORS.error : COLORS.textPrimary },
               ]}>
                 {cargando ? '$---' : formatMXN(disponibleContado)}
               </Text>
@@ -428,24 +365,33 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {alertas.length > 0 && <AlertaPresupuesto alertas={alertas} onDismiss={handleDismissAlerta} />}
+        {alertas.length > 0 && (
+          <AlertaPresupuesto alertas={alertas} onDismiss={handleDismissAlerta} />
+        )}
 
         <View style={estilos.seccion}>
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}><Text style={estilos.verTodos}>Ver todos</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
+              <Text style={estilos.verTodos}>Ver todos</Text>
+            </TouchableOpacity>
           </View>
-          {cargando ? <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} /> : (
-            ultimosGastos.length === 0 ? (
-              <View style={estilos.estadoVacio}>
-                <Text style={estilos.estadoVacioEmoji}>💸</Text>
-                <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
-              </View>
-            ) : ultimosGastos.map(g => <GastoItem key={g.id} gasto={g} categoria={getCategoriaByDbId(g.categoria_id)} />)
+          {cargando ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
+          ) : ultimosGastos.length === 0 ? (
+            <View style={estilos.estadoVacio}>
+              <Text style={estilos.estadoVacioEmoji}>💸</Text>
+              <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
+            </View>
+          ) : (
+            ultimosGastos.map(g => (
+              <GastoItem key={g.id} gasto={g} categoria={getCategoriaByDbId(g.categoria_id)} />
+            ))
           )}
         </View>
         <View style={{ height: 180 }} />
-        </ScrollView>
+      </ScrollView>
+
       {/* ── BOTONES FLOTANTES ── */}
       <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
         <BotonFintu
@@ -453,13 +399,21 @@ export default function Dashboard() {
           onPress={() => router.push('/(tabs)/agregar')}
           estilo={{ flex: 1 }}
         />
-        <TouchableOpacity style={estilos.btnVozFlotante} onPress={() => { hap.guardar(); setModalVozVisible(true); }}>
+        <TouchableOpacity
+          style={estilos.btnVozFlotante}
+          onPress={() => { hap.guardar(); setModalVozVisible(true); }}
+        >
           <Ionicons name="mic" size={24} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* ── MODAL DE VOZ AUTOMÁTICO ── */}
-      <Modal visible={modalVozVisible} transparent animationType="slide" onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}>
+      {/* ── MODAL DE VOZ ── */}
+      <Modal
+        visible={modalVozVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !guardandoVoz && setModalVozVisible(false)}
+      >
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalContenido}>
             <Pressable
@@ -470,7 +424,7 @@ export default function Dashboard() {
             </Pressable>
             <Text style={estilos.modalTitulo}>Registrar por voz</Text>
             <Text style={estilos.modalSubtitulo}>"Gasté 150 pesos en tacos hoy"</Text>
-            
+
             <View style={estilos.modalBotonVoz}>
               {guardandoVoz ? (
                 <View style={{ alignItems: 'center', gap: 12 }}>
@@ -483,7 +437,10 @@ export default function Dashboard() {
             </View>
 
             {!guardandoVoz && (
-              <TouchableOpacity style={estilos.btnCancelarModal} onPress={() => setModalVozVisible(false)}>
+              <TouchableOpacity
+                style={estilos.btnCancelarModal}
+                onPress={() => setModalVozVisible(false)}
+              >
                 <Text style={estilos.btnCancelarTexto}>Cancelar</Text>
               </TouchableOpacity>
             )}
@@ -496,14 +453,18 @@ export default function Dashboard() {
 
 function GastoItem({ gasto, categoria }) {
   return (
-    <TouchableOpacity 
-      style={estilos.gastoItem} 
-      onPress={() => hap.suave()} 
+    <TouchableOpacity
+      style={estilos.gastoItem}
+      onPress={() => hap.suave()}
       activeOpacity={0.7}
     >
-      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}><Text style={estilos.gastoEmoji}>{categoria.icono}</Text></View>
+      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}>
+        <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
+      </View>
       <View style={estilos.gastoInfo}>
-        <Text style={estilos.gastoDescripcion} numberOfLines={1}>{gasto.descripcion || categoria.nombre}</Text>
+        <Text style={estilos.gastoDescripcion} numberOfLines={1}>
+          {gasto.descripcion || categoria.nombre}
+        </Text>
         <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
       </View>
       <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
@@ -514,8 +475,6 @@ function GastoItem({ gasto, categoria }) {
 const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
-  toast: { position: 'absolute', top: 60, left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 18, borderRadius: 14, zIndex: 999, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10, backgroundColor: '#1A2A1A', borderWidth: 1, borderColor: COLORS.success },
-  toastTexto: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
   header: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingBottom: 28 },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
@@ -549,17 +508,10 @@ const estilos = StyleSheet.create({
   estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
   estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
   botonesFlotantes: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 12, alignItems: 'center' },
-  botonAgregar: { flex: 1, backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
-  botonTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
   btnVozFlotante: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 },
-  btnVozEmoji: { fontSize: 24 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContenido: { backgroundColor: COLORS.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 48, alignItems: 'center' },
-  modalHandleContenedor: {
-    paddingVertical: 8,
-    paddingHorizontal: 40,
-    alignItems: 'center',
-  },
+  modalHandleContenedor: { paddingVertical: 8, paddingHorizontal: 40, alignItems: 'center' },
   modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
   modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },

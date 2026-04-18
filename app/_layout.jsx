@@ -65,10 +65,6 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!cargando) verificarEstado();
-  }, [segments]);
-
-  useEffect(() => {
     if (cargando) return;
 
     const enOnboarding = segments[0] === "onboarding";

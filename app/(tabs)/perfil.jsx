@@ -22,12 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS } from '../../constants/colors';
-
-// ──────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────
-const formatMXN = (n) =>
-  `$${Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+import { formatMXN } from '../../utils/formato';
 
 // Genera días válidos 1-28 con descripción
 const DIAS_CORTE = Array.from({ length: 28 }, (_, i) => {
@@ -171,6 +166,10 @@ export default function PerfilScreen() {
       Alert.alert('Monto inválido', 'Ingresa tu sueldo base');
       return;
     }
+    if (nIsr < 0 || nImss < 0 || nIva < 0 || nVales < 0 || nFondo < 0) {
+      Alert.alert('Valores inválidos', 'Los montos de deducciones no pueden ser negativos');
+      return;
+    }
 
     try {
       setGuardando(true);
@@ -259,7 +258,7 @@ export default function PerfilScreen() {
   }
 
   const factor = frecuencia === 'quincenal' ? 2 : 1;
-  const netoMensual = (ingreso - isr - imss - iva + vales) * factor;
+  const netoMensual = (ingreso - isr - imss - iva - fondoAhorro + vales) * factor;
 
   return (
     <View style={[styles.contenedor, { paddingTop: insets.top }]}>
@@ -299,6 +298,7 @@ export default function PerfilScreen() {
                   setImssInput(String(imss));
                   setIvaInput(String(iva));
                   setValesInput(String(vales));
+                  setFondoInput(String(fondoAhorro));
                   setModalIngresoVisible(true);
                 }}
               />
@@ -394,11 +394,17 @@ export default function PerfilScreen() {
                     </View>
                   </View>
                 </View>
-                
+
+                <Text style={styles.labelInput}>Fondo de ahorro</Text>
+                <View style={styles.inputMontoContenedorMini}>
+                  <Text style={styles.inputPrefijoMini}>$</Text>
+                  <TextInput style={styles.inputMontoMini} value={fondoInput} onChangeText={setFondoInput} placeholder="0" keyboardType="numeric" />
+                </View>
+
                 <View style={styles.resumenNeto}>
                   <Text style={styles.resumenNetoLabel}>Neto mensual proyectado:</Text>
                   <Text style={styles.resumenNetoValor}>
-                    {formatMXN(((parseFloat(ingresoInput)||0) - (parseFloat(isrInput)||0) - (parseFloat(imssInput)||0) - (parseFloat(ivaInput)||0) + (parseFloat(valesInput)||0)) * (frecuencia === 'quincenal' ? 2 : 1))}
+                    {formatMXN(((parseFloat(ingresoInput)||0) - (parseFloat(isrInput)||0) - (parseFloat(imssInput)||0) - (parseFloat(ivaInput)||0) - (parseFloat(fondoInput)||0) + (parseFloat(valesInput)||0)) * (frecuencia === 'quincenal' ? 2 : 1))}
                   </Text>
                 </View>
               </ScrollView>

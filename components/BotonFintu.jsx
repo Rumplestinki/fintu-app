@@ -8,6 +8,7 @@ import {
   Text,
   View,
   StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { hap } from '../services/haptics';
 
@@ -152,7 +153,7 @@ export default function BotonFintu({
         <View style={estilos.contenido}>
           {icono && <Text style={estilos.icono}>{icono}</Text>}
           {cargando ? (
-            <Text style={[estilos.label, { color: color.texto }]}>...</Text>
+            <ActivityIndicator size="small" color={color.texto} />
           ) : (
             <Text style={[estilos.label, { color: color.texto }]}>{label}</Text>
           )}

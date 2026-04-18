@@ -8,7 +8,6 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  Alert,
   Modal,
   KeyboardAvoidingView,
   Platform,
@@ -20,46 +19,27 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
+import { NOMBRES_MESES } from '../../utils/fecha';
+import { formatMXN } from '../../utils/formato';
 import { obtenerPresupuestosMes, guardarPresupuesto, eliminarPresupuesto } from '../../services/presupuestos';
 import { obtenerGastosMes, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import { hap } from '../../services/haptics';
+import Toast from '../../components/Toast';
 
 // ──────────────────────────────────────────
-// Constantes
-// ──────────────────────────────────────────
-const NOMBRES_MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-
-// ──────────────────────────────────────────
-// Formatea número a pesos mexicanos
-// ──────────────────────────────────────────
-function formatMXN(monto) {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    minimumFractionDigits: 0,
-  }).format(monto || 0);
-}
-
-// ──────────────────────────────────────────
-// Barra de progreso de una categoría
-// Muestra cuánto gastaste vs tu límite
+// Barra de progreso animada de una categoría
 // ──────────────────────────────────────────
 function BarraPresupuesto({ gastado, limite, delay = 0 }) {
   const porcentaje = limite > 0 ? Math.min((gastado / limite) * 100, 100) : 0;
   const anchoAnim = useRef(new Animated.Value(0)).current;
 
-  // Color según qué tan cerca está del límite
   const colorBarra =
     porcentaje >= 100 ? COLORS.error :
     porcentaje >= 80  ? COLORS.warning :
     COLORS.primary;
 
   useEffect(() => {
-    // Resetear y animar cada vez que cambia el porcentaje
     anchoAnim.setValue(0);
     Animated.timing(anchoAnim, {
       toValue: porcentaje,
@@ -99,29 +79,24 @@ function BarraPresupuesto({ gastado, limite, delay = 0 }) {
 export default function PresupuestoScreen() {
   const insets = useSafeAreaInsets();
 
-  // ── Estado ──
-  const [presupuestos, setPresupuestos] = useState([]);  // datos de Supabase
-  const [gastosPorCategoria, setGastosPorCategoria] = useState({}); // { categoria_id: total }
+  const [presupuestos, setPresupuestos] = useState([]);
+  const [gastosPorCategoria, setGastosPorCategoria] = useState({});
   const [cargando, setCargando] = useState(true);
   const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '', mes: 1, anio: 2026 });
 
-  // Modal para editar un presupuesto
   const [modalVisible, setModalVisible] = useState(false);
   const [categoriaEditando, setCategoriaEditando] = useState(null);
   const [limiteInput, setLimiteInput] = useState('');
   const [guardando, setGuardando] = useState(false);
 
-  // Modal eliminación
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
 
-  // Animación barra general
   const barraGeneralAnim = useRef(new Animated.Value(0)).current;
 
   // Toast
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTipo, setToastTipo] = useState('exito');
-  const toastOpacity = useRef(new Animated.Value(0)).current;
 
   // ──────────────────────────────────────────
   // Cargar presupuestos y gastos del mes
@@ -131,7 +106,7 @@ export default function PresupuestoScreen() {
       setCargando(true);
 
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       const { data: perfil } = await supabase
         .from('users')
         .select('dia_corte')
@@ -187,21 +162,12 @@ export default function PresupuestoScreen() {
   const mostrarToast = (mensaje, tipo = 'exito') => {
     setToastMensaje(mensaje);
     setToastTipo(tipo);
-    toastOpacity.setValue(0);
-    setToastVisible(true);
-    Animated.sequence([
-      Animated.timing(toastOpacity, {
-        toValue: 1, duration: 200, useNativeDriver: true,
-      }),
-      Animated.delay(2000),
-      Animated.timing(toastOpacity, {
-        toValue: 0, duration: 300, useNativeDriver: true,
-      }),
-    ]).start(() => setToastVisible(false));
+    setToastVisible(false);
+    setTimeout(() => setToastVisible(true), 50);
   };
 
   // ──────────────────────────────────────────
-  // Calcular totales generales del mes
+  // Calcular totales generales
   // ──────────────────────────────────────────
   const totalPresupuestado = presupuestos.reduce((sum, p) => sum + parseFloat(p.limite), 0);
   const totalGastado = Object.values(gastosPorCategoria).reduce((sum, v) => sum + v, 0);
@@ -222,9 +188,6 @@ export default function PresupuestoScreen() {
     }
   }, [cargando, porcentajeGeneral]);
 
-  // ──────────────────────────────────────────
-  // Abrir modal para editar/crear presupuesto
-  // ──────────────────────────────────────────
   function abrirModal(categoria) {
     const presupuestoExistente = presupuestos.find(
       (p) => p.categoria_id === categoria.dbId
@@ -234,12 +197,8 @@ export default function PresupuestoScreen() {
     setModalVisible(true);
   }
 
-  // ──────────────────────────────────────────
-  // Guardar presupuesto en Supabase
-  // ──────────────────────────────────────────
   async function handleGuardar() {
     const limite = parseFloat(limiteInput);
-
     if (!limiteInput || isNaN(limite) || limite <= 0) {
       hap.error();
       mostrarToast('El monto debe ser mayor a $0', 'error');
@@ -272,9 +231,6 @@ export default function PresupuestoScreen() {
     }
   }
 
-  // ──────────────────────────────────────────
-  // Eliminar presupuesto de una categoría
-  // ──────────────────────────────────────────
   function handleEliminar() {
     const presupuesto = presupuestos.find(
       (p) => p.categoria_id === categoriaEditando?.dbId
@@ -288,9 +244,15 @@ export default function PresupuestoScreen() {
   }
 
   async function ejecutarEliminacion() {
+    // CORREGIDO: null check antes de acceder a presupuesto.id
     const presupuesto = presupuestos.find(
       (p) => p.categoria_id === categoriaEditando?.dbId
     );
+    if (!presupuesto) {
+      setModalEliminarVisible(false);
+      return;
+    }
+
     try {
       hap.error();
       await eliminarPresupuesto(presupuesto.id);
@@ -301,17 +263,14 @@ export default function PresupuestoScreen() {
       setModalVisible(false);
       setTimeout(() => mostrarToast('Presupuesto eliminado'), 300);
     } catch (e) {
+      setModalEliminarVisible(false);
       mostrarToast('No se pudo eliminar. Intenta de nuevo.', 'error');
     }
   }
 
-  // ──────────────────────────────────────────
-  // Render principal
-  // ──────────────────────────────────────────
   return (
     <View style={[styles.contenedor, { paddingTop: insets.top }]}>
 
-      {/* Título */}
       <View style={styles.cabecera}>
         <Text style={styles.titulo}>Presupuesto</Text>
         <Text style={styles.subtitulo}>
@@ -319,33 +278,15 @@ export default function PresupuestoScreen() {
         </Text>
       </View>
 
-      {/* Toast Global */}
-      {toastVisible && (
-        <Animated.View style={[
-          styles.toast,
-          { top: insets.top + 70 },
-          toastTipo === 'error'
-            ? { borderColor: COLORS.error, backgroundColor: '#2A1515' }
-            : { borderColor: COLORS.success, backgroundColor: '#1A2A1A' },
-          { opacity: toastOpacity },
-        ]}>
-          <Text style={{ fontSize: 16 }}>
-            {toastTipo === 'error' ? '❌' : '✅'}
-          </Text>
-          <Text style={styles.toastTexto}>{toastMensaje}</Text>
-        </Animated.View>
-      )}
+      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       {cargando ? (
         <View style={styles.contenedorCarga}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scroll}
-        >
-          {/* Resumen general del mes */}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          {/* Resumen general */}
           {totalPresupuestado > 0 && (
             <View style={styles.resumenGeneral}>
               <View style={styles.resumenFila}>
@@ -356,7 +297,7 @@ export default function PresupuestoScreen() {
                 <Text style={styles.resumenLabel}>Gastado</Text>
                 <Text style={[
                   styles.resumenMonto,
-                  { color: porcentajeGeneral >= 100 ? COLORS.error : COLORS.textPrimary }
+                  { color: porcentajeGeneral >= 100 ? COLORS.error : COLORS.textPrimary },
                 ]}>
                   {formatMXN(totalGastado)}
                 </Text>
@@ -383,10 +324,21 @@ export default function PresupuestoScreen() {
             </View>
           )}
 
-          {/* Lista de categorías */}
+          {/* Empty state cuando no hay presupuestos */}
+          {totalPresupuestado === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🎯</Text>
+              <Text style={styles.emptyTitulo}>Sin presupuestos aún</Text>
+              <Text style={styles.emptySubtitulo}>
+                Toca cualquier categoría para fijar tu límite mensual de gasto.
+              </Text>
+            </View>
+          )}
+
           <Text style={styles.seccionTitulo}>Por categoría</Text>
 
-          {CATEGORIAS.map((categoria) => {
+          {/* RENDIMIENTO: usar index directamente en lugar de CATEGORIAS.indexOf */}
+          {CATEGORIAS.map((categoria, index) => {
             const presupuesto = presupuestos.find((p) => p.categoria_id === categoria.dbId);
             const gastado = gastosPorCategoria[categoria.dbId] || 0;
             const limite = presupuesto ? parseFloat(presupuesto.limite) : 0;
@@ -394,7 +346,10 @@ export default function PresupuestoScreen() {
             const superado = tieneLimite && gastado > limite;
 
             return (
-              <View key={categoria.id} style={[styles.tarjetaWrapper, superado && styles.tarjetaWrapperSuperado]}>
+              <View
+                key={categoria.id}
+                style={[styles.tarjetaWrapper, superado && styles.tarjetaWrapperSuperado]}
+              >
                 <Pressable
                   style={[
                     styles.tarjetaCategoria,
@@ -403,7 +358,6 @@ export default function PresupuestoScreen() {
                   ]}
                   onPress={() => { hap.suave(); abrirModal(categoria); }}
                 >
-                  {/* Ícono y nombre */}
                   <View style={styles.categoriaIzquierda}>
                     <View style={[styles.iconoContenedor, { backgroundColor: categoria.color + '25' }]}>
                       <Text style={styles.icono}>{categoria.icono}</Text>
@@ -422,7 +376,6 @@ export default function PresupuestoScreen() {
                     </View>
                   </View>
 
-                  {/* Lado derecho: ícono de alerta o chevron */}
                   <View style={styles.categoriaDerecha}>
                     {superado && (
                       <Ionicons name="warning" size={16} color={COLORS.error} style={{ marginRight: 6 }} />
@@ -431,7 +384,6 @@ export default function PresupuestoScreen() {
                   </View>
                 </Pressable>
 
-                {/* Barra integrada en la parte inferior de la tarjeta */}
                 {tieneLimite && (
                   <View style={[
                     styles.barraIntegrada,
@@ -440,7 +392,7 @@ export default function PresupuestoScreen() {
                     <BarraPresupuesto
                       gastado={gastado}
                       limite={limite}
-                      delay={CATEGORIAS.indexOf(categoria) * 60}
+                      delay={index * 60}
                     />
                   </View>
                 )}
@@ -452,43 +404,29 @@ export default function PresupuestoScreen() {
         </ScrollView>
       )}
 
-      {/* ── MODAL PARA EDITAR PRESUPUESTO ── */}
+      {/* ── MODAL EDITAR PRESUPUESTO ── */}
       <Modal
         visible={modalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setModalVisible(false)}
       >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          >
+        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <Pressable style={styles.modalContenido}>
-
-              {/* Handle visual */}
               <View style={styles.modalHandle} />
 
-              {/* Encabezado del modal */}
               {categoriaEditando && (
                 <View style={styles.modalHeader}>
-                  <View style={[
-                    styles.iconoContenedor,
-                    { backgroundColor: categoriaEditando.color + '25' }
-                  ]}>
+                  <View style={[styles.iconoContenedor, { backgroundColor: categoriaEditando.color + '25' }]}>
                     <Text style={styles.icono}>{categoriaEditando.icono}</Text>
                   </View>
-                  <Text style={styles.modalTitulo}>
-                    {categoriaEditando.nombre}
-                  </Text>
+                  <Text style={styles.modalTitulo}>{categoriaEditando.nombre}</Text>
                 </View>
               )}
 
               <Text style={styles.modalLabel}>Límite mensual</Text>
 
-              {/* Input del monto */}
               <View style={styles.inputContenedor}>
                 <Text style={styles.inputPrefijo}>$</Text>
                 <TextInput
@@ -502,30 +440,18 @@ export default function PresupuestoScreen() {
                 />
               </View>
 
-              {/* Botones */}
               <View style={styles.modalBotones}>
-                {/* Mostrar botón eliminar solo si ya tiene presupuesto */}
                 {presupuestos.find((p) => p.categoria_id === categoriaEditando?.dbId) && (
-                  <Pressable
-                    style={styles.botonEliminar}
-                    onPress={handleEliminar}
-                  >
+                  <Pressable style={styles.botonEliminar} onPress={handleEliminar}>
                     <Ionicons name="trash-outline" size={18} color={COLORS.error} />
                   </Pressable>
                 )}
 
-                <Pressable
-                  style={styles.botonCancelar}
-                  onPress={() => setModalVisible(false)}
-                >
+                <Pressable style={styles.botonCancelar} onPress={() => setModalVisible(false)}>
                   <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                 </Pressable>
 
-                <Pressable
-                  style={styles.botonGuardar}
-                  onPress={handleGuardar}
-                  disabled={guardando}
-                >
+                <Pressable style={styles.botonGuardar} onPress={handleGuardar} disabled={guardando}>
                   {guardando ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
@@ -533,7 +459,6 @@ export default function PresupuestoScreen() {
                   )}
                 </Pressable>
               </View>
-
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -546,10 +471,7 @@ export default function PresupuestoScreen() {
         animationType="fade"
         onRequestClose={() => setModalEliminarVisible(false)}
       >
-        <Pressable
-          style={styles.modalEliminarOverlay}
-          onPress={() => setModalEliminarVisible(false)}
-        >
+        <Pressable style={styles.modalEliminarOverlay} onPress={() => setModalEliminarVisible(false)}>
           <Pressable style={styles.modalEliminarContenedor} onPress={() => {}}>
             <View style={styles.modalEliminarIcono}>
               <Text style={{ fontSize: 32 }}>🗑️</Text>
@@ -581,72 +503,35 @@ export default function PresupuestoScreen() {
   );
 }
 
-// ──────────────────────────────────────────
-// Estilos
-// ──────────────────────────────────────────
 const styles = StyleSheet.create({
-  contenedor: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  cabecera: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  titulo: {
-    color: COLORS.textPrimary,
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  subtitulo: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginTop: 2,
-  },
-  rangoTexto: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    opacity: 0.7,
-  },
-  contenedorCarga: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scroll: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
+  contenedor: { flex: 1, backgroundColor: COLORS.background },
+  cabecera: { paddingHorizontal: 20, paddingVertical: 16 },
+  titulo: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '700' },
+  subtitulo: { color: COLORS.textSecondary, fontSize: 14, marginTop: 2 },
+  rangoTexto: { fontSize: 12, color: COLORS.textSecondary, opacity: 0.7 },
+  contenedorCarga: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { paddingHorizontal: 20, paddingBottom: 20 },
 
-  // Resumen general
-  resumenGeneral: {
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
     backgroundColor: COLORS.surface,
     borderRadius: 16,
-    padding: 16,
     marginBottom: 24,
   },
-  resumenFila: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  resumenLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  resumenMonto: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  resumenPorcentaje: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: 'right',
-  },
+  emptyEmoji: { fontSize: 40, marginBottom: 12 },
+  emptyTitulo: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
+  emptySubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18 },
 
-  // Sección categorías
+  // Resumen
+  resumenGeneral: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 24 },
+  resumenFila: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  resumenLabel: { color: COLORS.textSecondary, fontSize: 14 },
+  resumenMonto: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '600' },
+  resumenPorcentaje: { color: COLORS.textSecondary, fontSize: 12, marginTop: 6, textAlign: 'right' },
+
   seccionTitulo: {
     color: COLORS.textSecondary,
     fontSize: 13,
@@ -656,14 +541,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  // CORREGIDO: overflow: 'hidden' solo una vez
   tarjetaWrapper: {
     marginBottom: 12,
     borderRadius: 12,
     overflow: 'hidden',
-    overflow: 'hidden',
   },
 
-  // Tarjeta de categoría
   tarjetaCategoria: {
     backgroundColor: COLORS.surface,
     padding: 14,
@@ -671,253 +555,85 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  tarjetaConBarra: {
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  tarjetaSuperada: {
-  },
-  barraIntegrada: {
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  categoriaIzquierda: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  iconoContenedor: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  icono: {
-    fontSize: 22,
-  },
-  categoriaNombre: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  categoriaDetalle: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-  },
-  categoriaDerecha: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  tarjetaConBarra: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tarjetaSuperada: {},
+  barraIntegrada: { backgroundColor: COLORS.surface, paddingHorizontal: 14, paddingVertical: 10 },
+  categoriaIzquierda: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  iconoContenedor: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  icono: { fontSize: 22 },
+  categoriaNombre: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '500', marginBottom: 2 },
+  categoriaDetalle: { color: COLORS.textSecondary, fontSize: 13 },
+  categoriaDerecha: { flexDirection: 'row', alignItems: 'center' },
 
-  // Barra de progreso
-  barraContenedor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  barraBg: {
-    flex: 1,
-    height: 8,
-    backgroundColor: COLORS.border,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  barraRelleno: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  baraPorcentaje: {
-    fontSize: 12,
-    fontWeight: '700',
-    minWidth: 38,
-    textAlign: 'right',
-  },
-
-  // Toast
-  toast: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    zIndex: 999,
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  toastTexto: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
+  barraContenedor: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  barraBg: { flex: 1, height: 8, backgroundColor: COLORS.border, borderRadius: 4, overflow: 'hidden' },
+  barraRelleno: { height: '100%', borderRadius: 4 },
+  baraPorcentaje: { fontSize: 12, fontWeight: '700', minWidth: 38, textAlign: 'right' },
 
   tarjetaWrapperSuperado: {
     borderWidth: 1,
     borderColor: COLORS.error + '60',
     borderRadius: 12,
-},
+  },
 
   // Modal eliminación
   modalEliminarOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
   },
   modalEliminarContenedor: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    width: '100%',
+    backgroundColor: COLORS.surface, borderRadius: 20, padding: 24,
+    alignItems: 'center', width: '100%',
   },
   modalEliminarIcono: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: COLORS.error + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  modalEliminarTitulo: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 8,
-  },
-  modalEliminarMensaje: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
+  modalEliminarTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
+  modalEliminarMensaje: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
   modalEliminarBotones: { flexDirection: 'row', gap: 12, width: '100%' },
   modalEliminarBtnCancelar: {
     flex: 1, height: 48, borderRadius: 12,
     borderWidth: 1.5, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  modalEliminarBtnCancelarTxt: {
-    fontSize: 15, fontWeight: '600', color: COLORS.textSecondary,
-  },
+  modalEliminarBtnCancelarTxt: { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
   modalEliminarBtnConfirmar: {
     flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: COLORS.error,
-    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.error, alignItems: 'center', justifyContent: 'center',
   },
-  modalEliminarBtnConfirmarTxt: {
-    fontSize: 15, fontWeight: '700', color: '#fff',
-  },
+  modalEliminarBtnConfirmarTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   // Modal general
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContenido: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
+    backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40,
   },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.border,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  modalTitulo: {
-    color: COLORS.textPrimary,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  modalLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginBottom: 8,
-  },
+  modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  modalTitulo: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '600' },
+  modalLabel: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 8 },
   inputContenedor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 24,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.background, borderRadius: 12, paddingHorizontal: 16, marginBottom: 24,
   },
-  inputPrefijo: {
-    color: COLORS.textSecondary,
-    fontSize: 24,
-    marginRight: 4,
-  },
-  input: {
-    flex: 1,
-    color: COLORS.textPrimary,
-    fontSize: 32,
-    fontWeight: '600',
-    paddingVertical: 16,
-  },
-  modalBotones: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
+  inputPrefijo: { color: COLORS.textSecondary, fontSize: 24, marginRight: 4 },
+  input: { flex: 1, color: COLORS.textPrimary, fontSize: 32, fontWeight: '600', paddingVertical: 16 },
+  modalBotones: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   botonEliminar: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: COLORS.error + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: COLORS.error + '20', justifyContent: 'center', alignItems: 'center',
   },
   botonCancelar: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 1, height: 48, borderRadius: 12,
+    backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center',
   },
-  botonCancelarTexto: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  botonCancelarTexto: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '500' },
   botonGuardar: {
-    flex: 2,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 2, height: 48, borderRadius: 12,
+    backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center',
   },
-  botonGuardarTexto: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  botonGuardarTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
