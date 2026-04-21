@@ -1,5 +1,5 @@
 // app/(tabs)/index.jsx
-// Dashboard principal de Fintú — Registro por voz instantáneo y cálculo de neto real
+// Dashboard principal de Fintú — diseño Soft Dark Luxury
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -16,93 +16,121 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hap } from '../../services/haptics';
 import { COLORS } from '../../constants/colors';
 import { getCategoriaByDbId } from '../../constants/categorias';
 import { NOMBRES_MESES, formatearFechaGasto } from '../../utils/fecha';
-import { formatMXN } from '../../utils/formato';
+import { formatMXN, hexToRgba } from '../../utils/formato';
 import { obtenerPresupuestosMes } from '../../services/presupuestos';
 import { obtenerUltimosGastos, obtenerGastosMes, registrarGasto, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import BotonVoz from '../../components/BotonVoz';
 import AlertaPresupuesto from '../../components/AlertaPresupuesto';
 import { verificarPresupuestos } from '../../services/notificaciones';
-import BotonFintu from '../../components/BotonFintu';
 import Toast from '../../components/Toast';
 import { toLocalISO } from '../../utils/fecha';
 
-// ─── HOOK DE ANIMACIÓN DE CONTADOR ─────────────────────────
+// ─── SALUDO SEGÚN HORA ──────────────────────────────────────
+function saludo() {
+  const hora = new Date().getHours();
+  if (hora < 12) return 'Buenos días';
+  if (hora < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
 
-function useContadorAnimado(valorFinal, duracion, delay) {
-  const [conteo, setConteo] = useState(0);
-  const animValue = useRef(new Animated.Value(0)).current;
-  const animRef = useRef(null);
+// ─── COMPONENTE: BARRA DE CATEGORÍA ANIMADA ─────────────────
+function BarraCategoria({ categoria, total, totalMes, delay }) {
+  const pct = totalMes > 0 ? Math.min((total / totalMes) * 100, 100) : 0;
+  const anchoAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Detener animación anterior antes de iniciar una nueva
-    if (animRef.current) animRef.current.stop();
-
-    animValue.setValue(0);
-    setConteo(0);
-
-    const idListener = animValue.addListener(({ value }) => {
-      setConteo(Math.round(value));
-    });
-
-    animRef.current = Animated.timing(animValue, {
-      toValue: valorFinal,
-      duration: duracion,
+    anchoAnim.setValue(0);
+    Animated.timing(anchoAnim, {
+      toValue: pct,
+      duration: 600,
       delay: delay,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
-    });
-    animRef.current.start();
+    }).start();
+  }, [pct]);
 
-    return () => {
-      animValue.removeListener(idListener);
-    };
-  }, [valorFinal]);
+  return (
+    <View style={estilos.catRow}>
+      {/* Ícono */}
+      <View style={[estilos.catIcono, { backgroundColor: hexToRgba(categoria.color, 0.18) }]}>
+        <Text style={estilos.catEmoji}>{categoria.icono}</Text>
+      </View>
+      {/* Info + barra */}
+      <View style={estilos.catInfo}>
+        <Text style={estilos.catNombre}>{categoria.nombre}</Text>
+        <View style={estilos.barraBg}>
+          <Animated.View
+            style={[
+              estilos.barraRelleno,
+              {
+                width: anchoAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+                backgroundColor: categoria.color,
+              },
+            ]}
+          />
+        </View>
+      </View>
+      {/* Monto + % */}
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={estilos.catMonto}>{formatMXN(total)}</Text>
+        <Text style={estilos.catPct}>{Math.round(pct)}%</Text>
+      </View>
+    </View>
+  );
+}
 
-  return conteo;
+// ─── COMPONENTE: GASTO ITEM ─────────────────────────────────
+function GastoItem({ gasto, categoria, onPress }) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <View style={estilos.gastoRow}>
+        {/* Ícono */}
+        <View style={[estilos.gastoIcono, { backgroundColor: hexToRgba(categoria.color, 0.18) }]}>
+          <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
+        </View>
+        {/* Info */}
+        <View style={estilos.gastoInfo}>
+          <Text style={estilos.gastoDescripcion} numberOfLines={1}>
+            {gasto.descripcion || categoria.nombre}
+          </Text>
+          <View style={estilos.gastoSubRow}>
+            <Text style={estilos.gastoCat}>{categoria.nombre}</Text>
+            <View style={estilos.gastoDot} />
+            <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
+          </View>
+        </View>
+        {/* Monto */}
+        <Text style={estilos.gastoMonto}>−{formatMXN(gasto.monto)}</Text>
+      </View>
+      <View style={estilos.separadorItem} />
+    </TouchableOpacity>
+  );
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────
-
 export default function Dashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // Datos
   const [nombreUsuario, setNombreUsuario] = useState('');
+  const [iniciales, setIniciales] = useState('?');
   const [gastadoMes, setGastadoMes] = useState(0);
+  const [ingresosNetos, setIngresosNetos] = useState(0);
   const [ultimosGastos, setUltimosGastos] = useState([]);
+  const [top3Categorias, setTop3Categorias] = useState([]);
+  const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
-  const [presupuestoMes, setPresupuestoMes] = useState(0);
-  const [ingresosNetos, setIngresosNetos] = useState(0);
-
-  // Estados para disparar animaciones
-  const [gastadoAnimado, setGastadoAnimado] = useState(0);
-  const [ingresosAnimado, setIngresosAnimado] = useState(0);
-
-  // Valores animados de UI
-  const opacityAnim = useRef(new Animated.Value(0.75)).current;
-  const barraAnim = useRef(new Animated.Value(0)).current;
-
-  // Hooks de contador animado
-  const gastoContado = useContadorAnimado(gastadoAnimado, 1000, 0);
-  const ingresosContado = useContadorAnimado(ingresosAnimado, 900, 120);
-  const disponibleCalc = ingresosAnimado - gastadoAnimado;
-  const disponibleContado = useContadorAnimado(disponibleCalc, 900, 240);
-
-  // Modal de Voz
-  const [modalVozVisible, setModalVozVisible] = useState(false);
-  const [guardandoVoz, setGuardandoVoz] = useState(false);
-
-  const [infoPeriodo, setInfoPeriodo] = useState({ label: '', rango: '' });
 
   // Alertas de presupuesto
   const [alertas, setAlertas] = useState([]);
@@ -113,6 +141,48 @@ export default function Dashboard() {
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastTipo, setToastTipo] = useState('exito');
 
+  // Modal de voz
+  const [modalVozVisible, setModalVozVisible] = useState(false);
+  const [guardandoVoz, setGuardandoVoz] = useState(false);
+
+  // Timer para activar voz con long press
+  const vozTimerRef = useRef(null);
+
+  // ── Animaciones de entrada ──
+  const fadeBalance = useRef(new Animated.Value(0)).current;
+  const slideBalance = useRef(new Animated.Value(12)).current;
+  const fadeCategorias = useRef(new Animated.Value(0)).current;
+  const slideCategorias = useRef(new Animated.Value(12)).current;
+  const fadeMovimientos = useRef(new Animated.Value(0)).current;
+  const slideMovimientos = useRef(new Animated.Value(12)).current;
+
+  // ── Animación de monto principal ──
+  const montoAnim = useRef(new Animated.Value(0)).current;
+  const [montoMostrado, setMontoMostrado] = useState(0);
+
+  // ── Animación FAB de voz (pulse ring) ──
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(null);
+
+  useEffect(() => {
+    // Iniciar animación pulse del FAB de voz en loop
+    pulseAnim.current = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(pulseScale, { toValue: 1.4, duration: 1200, useNativeDriver: true }),
+          Animated.timing(pulseOpacity, { toValue: 0, duration: 1200, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(pulseScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(pulseOpacity, { toValue: 1, duration: 0, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    pulseAnim.current.start();
+    return () => pulseAnim.current?.stop();
+  }, []);
+
   const mostrarToast = (mensaje, tipo = 'exito') => {
     setToastMensaje(mensaje);
     setToastTipo(tipo);
@@ -120,14 +190,44 @@ export default function Dashboard() {
     setTimeout(() => setToastVisible(true), 50);
   };
 
+  // ── Animaciones de entrada (stagger) ──
+  const animarEntrada = () => {
+    // Resetear
+    fadeBalance.setValue(0);    slideBalance.setValue(12);
+    fadeCategorias.setValue(0); slideCategorias.setValue(12);
+    fadeMovimientos.setValue(0); slideMovimientos.setValue(12);
+
+    const animar = (fade, slide, delay) =>
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: 420, delay, easing: Easing.out(Easing.back(1)), useNativeDriver: true }),
+        Animated.timing(slide, { toValue: 0, duration: 420, delay, easing: Easing.out(Easing.back(1)), useNativeDriver: true }),
+      ]);
+
+    Animated.stagger(80, [
+      animar(fadeBalance, slideBalance, 0),
+      animar(fadeCategorias, slideCategorias, 0),
+      animar(fadeMovimientos, slideMovimientos, 0),
+    ]).start();
+  };
+
+  // ── Animación de monto ──
+  const animarMonto = (valor) => {
+    montoAnim.setValue(0);
+    const listener = montoAnim.addListener(({ value }) => setMontoMostrado(value));
+    Animated.timing(montoAnim, {
+      toValue: valor,
+      duration: 800,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(() => montoAnim.removeListener(listener));
+  };
+
   // ── Cargar datos desde Supabase ──
   const cargarDatos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
       let diaCorte = 1;
       let netoMensual = 0;
-      let totalMes = 0;
 
       if (user) {
         const { data: perfil } = await supabase
@@ -136,18 +236,18 @@ export default function Dashboard() {
           .eq('id', user.id)
           .single();
 
-        setNombreUsuario(perfil?.nombre || user.email?.split('@')[0] || 'Usuario');
+        const nombre = perfil?.nombre || user.email?.split('@')[0] || 'Usuario';
+        setNombreUsuario(nombre);
+        setIniciales(nombre.substring(0, 2).toUpperCase());
 
-        const bruto = perfil?.ingreso_mensual || 0;
-        const isr = perfil?.isr || 0;
-        const imss = perfil?.imss || 0;
-        const iva = perfil?.iva || 0;
-        const vales = perfil?.vales_despensa || 0;
-        const fondo = perfil?.fondo_ahorro || 0;
-        const frecuencia = perfil?.frecuencia_pago || 'mensual';
-
-        const factor = frecuencia === 'quincenal' ? 2 : 1;
-        netoMensual = (bruto - isr - imss - iva - fondo + vales) * factor;
+        const bruto    = perfil?.ingreso_mensual || 0;
+        const isr      = perfil?.isr || 0;
+        const imss     = perfil?.imss || 0;
+        const iva      = perfil?.iva || 0;
+        const vales    = perfil?.vales_despensa || 0;
+        const fondo    = perfil?.fondo_ahorro || 0;
+        const factor   = (perfil?.frecuencia_pago || 'mensual') === 'quincenal' ? 2 : 1;
+        netoMensual    = (bruto - isr - imss - iva - fondo + vales) * factor;
 
         setIngresosNetos(netoMensual);
         diaCorte = perfil?.dia_corte || 1;
@@ -156,39 +256,42 @@ export default function Dashboard() {
       const { inicio, fin } = calcularPeriodo(diaCorte, 0);
       const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
       const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
-
       const budgetMonth = mesIni;
-      const budgetYear = anioIni;
+      const budgetYear  = anioIni;
 
       let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
-      let rangoPeriodo = '';
       if (diaCorte > 1) {
-        const mesFinCorto = NOMBRES_MESES[mesFin - 1].substring(0, 3);
-        const mesIniCorto = NOMBRES_MESES[mesIni - 1].substring(0, 3);
-        rangoPeriodo = `${diaIni} ${mesIniCorto} – ${diaFin} ${mesFinCorto}`;
+        const mIni = NOMBRES_MESES[mesIni - 1].substring(0, 3);
+        const mFin = NOMBRES_MESES[mesFin - 1].substring(0, 3);
+        labelPeriodo = `${diaIni} ${mIni} – ${diaFin} ${mFin}`;
       }
-      setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo });
+      setInfoPeriodo({ label: labelPeriodo });
 
-      // RENDIMIENTO: parallelizar las 3 queries independientes
-      const [gastosDelMes, recientes, presupuestosData] = await Promise.all([
+      const [gastosDelMes, recientes] = await Promise.all([
         obtenerGastosMes(budgetMonth, budgetYear, diaCorte),
-        obtenerUltimosGastos(5, inicio, fin),
-        obtenerPresupuestosMes(budgetMonth, budgetYear),
+        obtenerUltimosGastos(3, inicio, fin),
       ]);
 
-      totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
+      const totalMes = gastosDelMes.reduce((sum, g) => sum + parseFloat(g.monto), 0);
       setGastadoMes(totalMes);
       setUltimosGastos(recientes);
 
-      const totalPresupuestado = presupuestosData.reduce(
-        (sum, p) => sum + parseFloat(p.limite), 0
-      );
-      setPresupuestoMes(totalPresupuestado);
+      // Calcular top 3 categorías
+      const porCategoria = {};
+      for (const g of gastosDelMes) {
+        const cid = g.categoria_id;
+        porCategoria[cid] = (porCategoria[cid] || 0) + parseFloat(g.monto);
+      }
+      const top3 = Object.entries(porCategoria)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([cid, total]) => ({ categoria: getCategoriaByDbId(Number(cid)), total }));
+      setTop3Categorias(top3);
 
       setCargando(false);
       setRefrescando(false);
-      setGastadoAnimado(totalMes);
-      setIngresosAnimado(netoMensual);
+      animarEntrada();
+      animarMonto(totalMes);
 
     } catch (error) {
       console.error('Error cargando dashboard:', error);
@@ -196,33 +299,6 @@ export default function Dashboard() {
       setRefrescando(false);
     }
   };
-
-  // Disparar animaciones al cargar
-  useEffect(() => {
-    if (!cargando && gastadoAnimado >= 0) {
-      const porcentaje = presupuestoMes > 0 ? Math.round((gastadoAnimado / presupuestoMes) * 100) : 0;
-
-      opacityAnim.setValue(0.75);
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 1000,
-        useNativeDriver: true,
-      }).start();
-
-      barraAnim.setValue(0);
-      Animated.timing(barraAnim, {
-        toValue: Math.min(porcentaje, 100),
-        duration: 800,
-        delay: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-
-      const timer = setTimeout(() => hap.suave(), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [gastadoAnimado, presupuestoMes, cargando]);
 
   const actualizarAlertas = async () => {
     const nuevasAlertas = await verificarPresupuestos();
@@ -250,6 +326,21 @@ export default function Dashboard() {
     setAlertas(prev => prev.filter(a => a.id !== id));
   };
 
+  // ── Long press para activar voz ──
+  const handleVozPressIn = () => {
+    vozTimerRef.current = setTimeout(() => {
+      hap.guardar();
+      setModalVozVisible(true);
+    }, 500);
+  };
+
+  const handleVozPressOut = () => {
+    if (vozTimerRef.current) {
+      clearTimeout(vozTimerRef.current);
+      vozTimerRef.current = null;
+    }
+  };
+
   // ── Guardar gasto por voz ──
   const handleResultadoVoz = async (datos) => {
     if (!datos.monto || datos.monto === '0') {
@@ -257,11 +348,9 @@ export default function Dashboard() {
       router.push('/(tabs)/agregar');
       return;
     }
-
     try {
       setGuardandoVoz(true);
       const { data: { user } } = await supabase.auth.getUser();
-
       await registrarGasto({
         userId: user?.id,
         monto: parseFloat(datos.monto),
@@ -270,141 +359,205 @@ export default function Dashboard() {
         fecha: datos.fecha || toLocalISO(new Date()),
         origen: 'voz',
       });
-
       setModalVozVisible(false);
       cargarDatos();
       actualizarAlertas();
-      mostrarToast(`🎙️ Guardado: $${datos.monto} en ${datos.categoria?.nombre}`);
-
+      mostrarToast(`Guardado: $${datos.monto} en ${datos.categoria?.nombre}`);
     } catch (error) {
       console.error('Error guardando gasto por voz:', error);
-      mostrarToast('No se pudo guardar el gasto. Intenta de nuevo.', 'error');
+      mostrarToast('No se pudo guardar el gasto.', 'error');
     } finally {
       setGuardandoVoz(false);
     }
   };
 
-  const porcentajeUsado = presupuestoMes > 0 ? Math.round((gastadoMes / presupuestoMes) * 100) : 0;
-
-  // UX: inicial de avatar — mostrar "?" mientras carga
-  const inicialAvatar = nombreUsuario ? nombreUsuario.charAt(0).toUpperCase() : '?';
+  // Separar centavos para efecto visual en el balance
+  const balanceStr = formatMXN(Math.round(montoMostrado));
 
   return (
     <View style={estilos.contenedor}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
-      {/* ── HEADER ── */}
-      <View style={[estilos.header, { paddingTop: insets.top + 8 }]}>
-        <View style={estilos.headerTop}>
-          <View>
-            <Text style={estilos.saludo}>
-              {cargando ? 'Cargando...' : `Hola, ${nombreUsuario} 👋`}
-            </Text>
-            <View style={estilos.periodoContenedor}>
-              <Text style={estilos.fechaMes}>{infoPeriodo.label}</Text>
-              {infoPeriodo.rango !== '' && (
-                <Text style={estilos.rangoPeriodo}>{infoPeriodo.rango}</Text>
-              )}
-            </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[estilos.scroll, { paddingTop: insets.top + 12 }]}
+        refreshControl={
+          <RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />
+        }
+      >
+
+        {/* ── HEADER ── */}
+        <View style={estilos.header}>
+          {/* Avatar + gradiente */}
+          <LinearGradient
+            colors={['#6C63FF', '#A78BFA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={estilos.avatar}
+          >
+            <Text style={estilos.avatarTexto}>{iniciales}</Text>
+          </LinearGradient>
+
+          {/* Saludo */}
+          <View style={{ flex: 1, marginHorizontal: 12 }}>
+            <Text style={estilos.saludoTexto}>{saludo()}</Text>
+            <Text style={estilos.nombreTexto} numberOfLines={1}>{nombreUsuario}</Text>
           </View>
-          <TouchableOpacity style={estilos.avatar} onPress={() => router.push('/(tabs)/perfil')}>
-            <Text style={estilos.avatarTexto}>{inicialAvatar}</Text>
+
+          {/* Botones derecha */}
+          <TouchableOpacity style={estilos.iconBtn} onPress={() => {}}>
+            <Ionicons name="notifications-outline" size={22} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={estilos.iconBtn} onPress={() => router.push('/(tabs)/perfil')}>
+            <Ionicons name="settings-outline" size={22} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        <Text style={estilos.etiquetaBalance}>Gastado este mes</Text>
-        {cargando ? <ActivityIndicator color="#fff" style={{ marginVertical: 12 }} /> : (
-          <>
-            <Animated.Text style={[estilos.montoBalance, { opacity: opacityAnim }]}>
-              {formatMXN(gastoContado)}
-            </Animated.Text>
-            <Text style={estilos.subBalance}>de {formatMXN(presupuestoMes)} presupuestados</Text>
-          </>
-        )}
+        {/* ── BALANCE CARD HERO ── */}
+        <Animated.View
+          style={[
+            estilos.balanceCardWrap,
+            { opacity: fadeBalance, transform: [{ translateY: slideBalance }] },
+          ]}
+        >
+          <LinearGradient
+            colors={['#6C63FF', '#4B3FCC']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={estilos.balanceCard}
+          >
+            {/* Círculo decorativo */}
+            <View style={estilos.circuloDecorativo} />
 
-        <View style={estilos.barraBg}>
-          <Animated.View style={[
-            estilos.barraRelleno,
-            {
-              width: barraAnim.interpolate({
-                inputRange: [0, 100],
-                outputRange: ['0%', '100%'],
-              }),
-              backgroundColor: porcentajeUsado >= 90 ? COLORS.error : porcentajeUsado >= 70 ? COLORS.warning : '#fff',
-            },
-          ]} />
-        </View>
-        <Text style={estilos.porcentajeTexto}>{porcentajeUsado}% del presupuesto</Text>
-      </View>
-
-      {/* ── SCROLL ── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={estilos.scroll}
-        refreshControl={<RefreshControl refreshing={refrescando} onRefresh={onRefresh} tintColor={COLORS.primary} />}
-      >
-        <View style={estilos.seccion}>
-          <View style={estilos.tarjetasGrid}>
-            <View style={estilos.tarjetaMini}>
-              <Text style={estilos.tarjetaMiniLabel}>Ingresos Netos</Text>
-              <Text style={[estilos.tarjetaMiniMonto, { color: COLORS.success }]}>
-                {cargando ? '$---' : formatMXN(ingresosContado)}
-              </Text>
+            {/* Row: label + pill periodo */}
+            <View style={estilos.balanceRow1}>
+              <Text style={estilos.balanceLabel}>BALANCE DISPONIBLE</Text>
+              <View style={estilos.periodoChip}>
+                <Text style={estilos.periodoChipTexto}>{infoPeriodo.label}</Text>
+              </View>
             </View>
-            <View style={estilos.tarjetaMini}>
-              <Text style={estilos.tarjetaMiniLabel}>Disponible</Text>
-              <Text style={[
-                estilos.tarjetaMiniMonto,
-                { color: disponibleCalc < 0 ? COLORS.error : COLORS.textPrimary },
-              ]}>
-                {cargando ? '$---' : formatMXN(disponibleContado)}
-              </Text>
-            </View>
-          </View>
-        </View>
 
+            {/* Monto principal */}
+            {cargando ? (
+              <ActivityIndicator color="rgba(255,255,255,0.8)" style={{ marginVertical: 14 }} />
+            ) : (
+              <Text style={estilos.balanceMonto}>{balanceStr}</Text>
+            )}
+
+            {/* Separador */}
+            <View style={estilos.balanceSeparador} />
+
+            {/* Sub-métricas: Ingresos + Gastos */}
+            <View style={estilos.balanceSubRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.subLabel}>INGRESOS</Text>
+                <Text style={[estilos.subMonto, { color: '#A0FFD6' }]}>
+                  {formatMXN(ingresosNetos)}
+                </Text>
+              </View>
+              <View style={estilos.subSeparador} />
+              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                <Text style={estilos.subLabel}>GASTOS</Text>
+                <Text style={estilos.subMonto}>{formatMXN(gastadoMes)}</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* ── ALERTAS DE PRESUPUESTO ── */}
         {alertas.length > 0 && (
           <AlertaPresupuesto alertas={alertas} onDismiss={handleDismissAlerta} />
         )}
 
-        <View style={estilos.seccion}>
+        {/* ── SECCIÓN: GASTOS DEL MES ── */}
+        <Animated.View
+          style={[
+            estilos.seccion,
+            { opacity: fadeCategorias, transform: [{ translateY: slideCategorias }] },
+          ]}
+        >
+          <View style={estilos.seccionHeader}>
+            <Text style={estilos.seccionTitulo}>Gastos del mes</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
+              <Text style={estilos.verTodo}>Ver todo →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {cargando ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+          ) : top3Categorias.length === 0 ? (
+            <View style={estilos.estadoVacio}>
+              <Text style={estilos.vacioEmoji}>💸</Text>
+              <Text style={estilos.vacioTexto}>Sin gastos este mes</Text>
+            </View>
+          ) : (
+            top3Categorias.map((item, i) => (
+              <BarraCategoria
+                key={item.categoria.id}
+                categoria={item.categoria}
+                total={item.total}
+                totalMes={gastadoMes}
+                delay={i * 100}
+              />
+            ))
+          )}
+        </Animated.View>
+
+        {/* ── SECCIÓN: ÚLTIMOS MOVIMIENTOS ── */}
+        <Animated.View
+          style={[
+            estilos.seccion,
+            { opacity: fadeMovimientos, transform: [{ translateY: slideMovimientos }] },
+          ]}
+        >
           <View style={estilos.seccionHeader}>
             <Text style={estilos.seccionTitulo}>Últimos movimientos</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/gastos')}>
-              <Text style={estilos.verTodos}>Ver todos</Text>
+              <Text style={estilos.verTodo}>Ver todo →</Text>
             </TouchableOpacity>
           </View>
+
           {cargando ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
           ) : ultimosGastos.length === 0 ? (
             <View style={estilos.estadoVacio}>
-              <Text style={estilos.estadoVacioEmoji}>💸</Text>
-              <Text style={estilos.estadoVacioTitulo}>Sin gastos este mes</Text>
+              <Text style={estilos.vacioEmoji}>📋</Text>
+              <Text style={estilos.vacioTexto}>No hay movimientos recientes</Text>
             </View>
           ) : (
             ultimosGastos.map(g => (
-              <GastoItem key={g.id} gasto={g} categoria={getCategoriaByDbId(g.categoria_id)} />
+              <GastoItem
+                key={g.id}
+                gasto={g}
+                categoria={getCategoriaByDbId(g.categoria_id)}
+                onPress={() => router.push('/(tabs)/gastos')}
+              />
             ))
           )}
-        </View>
-        <View style={{ height: 180 }} />
+        </Animated.View>
+
+        <View style={{ height: 160 }} />
       </ScrollView>
 
-      {/* ── BOTONES FLOTANTES ── */}
-      <View style={[estilos.botonesFlotantes, { bottom: insets.bottom + 95 }]}>
-        <BotonFintu
-          label="+ Agregar gasto"
-          onPress={() => router.push('/(tabs)/agregar')}
-          estilo={{ flex: 1 }}
+      {/* ── FAB DE VOZ FLOTANTE ── */}
+      <View style={[estilos.fabVozWrap, { bottom: insets.bottom + 90 }]}>
+        {/* Anillo de pulse */}
+        <Animated.View
+          style={[
+            estilos.fabVozAnillo,
+            { transform: [{ scale: pulseScale }], opacity: pulseOpacity },
+          ]}
+          pointerEvents="none"
         />
-        <TouchableOpacity
-          style={estilos.btnVozFlotante}
-          onPress={() => { hap.guardar(); setModalVozVisible(true); }}
+        <Pressable
+          onPressIn={handleVozPressIn}
+          onPressOut={handleVozPressOut}
+          style={estilos.fabVozBoton}
         >
-          <Ionicons name="mic" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
+          <Ionicons name="mic-outline" size={22} color={COLORS.primary} />
+        </Pressable>
+        <Text style={estilos.fabVozLabel}>mantén presionado</Text>
       </View>
 
       {/* ── MODAL DE VOZ ── */}
@@ -418,14 +571,14 @@ export default function Dashboard() {
           <View style={estilos.modalContenido}>
             <Pressable
               onPress={() => !guardandoVoz && setModalVozVisible(false)}
-              style={estilos.modalHandleContenedor}
+              style={{ alignItems: 'center', paddingVertical: 8 }}
             >
               <View style={estilos.modalHandle} />
             </Pressable>
             <Text style={estilos.modalTitulo}>Registrar por voz</Text>
             <Text style={estilos.modalSubtitulo}>"Gasté 150 pesos en tacos hoy"</Text>
 
-            <View style={estilos.modalBotonVoz}>
+            <View style={{ marginBottom: 20, alignItems: 'center' }}>
               {guardandoVoz ? (
                 <View style={{ alignItems: 'center', gap: 12 }}>
                   <ActivityIndicator size="large" color={COLORS.primary} />
@@ -438,10 +591,10 @@ export default function Dashboard() {
 
             {!guardandoVoz && (
               <TouchableOpacity
-                style={estilos.btnCancelarModal}
+                style={{ paddingVertical: 10, alignItems: 'center' }}
                 onPress={() => setModalVozVisible(false)}
               >
-                <Text style={estilos.btnCancelarTexto}>Cancelar</Text>
+                <Text style={{ fontSize: 15, color: COLORS.textSecondary }}>Cancelar</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -451,71 +604,218 @@ export default function Dashboard() {
   );
 }
 
-function GastoItem({ gasto, categoria }) {
-  return (
-    <TouchableOpacity
-      style={estilos.gastoItem}
-      onPress={() => hap.suave()}
-      activeOpacity={0.7}
-    >
-      <View style={[estilos.gastoIcono, { backgroundColor: categoria.color + '25' }]}>
-        <Text style={estilos.gastoEmoji}>{categoria.icono}</Text>
-      </View>
-      <View style={estilos.gastoInfo}>
-        <Text style={estilos.gastoDescripcion} numberOfLines={1}>
-          {gasto.descripcion || categoria.nombre}
-        </Text>
-        <Text style={estilos.gastoFecha}>{formatearFechaGasto(gasto.fecha)}</Text>
-      </View>
-      <Text style={estilos.gastoMonto}>-{formatMXN(gasto.monto)}</Text>
-    </TouchableOpacity>
-  );
-}
-
+// ─── ESTILOS ─────────────────────────────────────────────────
 const estilos = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flexGrow: 1 },
-  header: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingBottom: 28 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  saludo: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
-  periodoContenedor: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  fechaMes: { fontSize: 17, fontWeight: '600', color: '#fff' },
-  rangoPeriodo: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '500', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  avatarTexto: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  etiquetaBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
-  montoBalance: { fontSize: 34, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
-  subBalance: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
-  barraBg: { marginTop: 14, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden' },
-  barraRelleno: { height: '100%', borderRadius: 3 },
-  porcentajeTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 6, textAlign: 'right' },
-  seccion: { paddingHorizontal: 16, marginTop: 16 },
-  seccionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seccionTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
-  verTodos: { fontSize: 12, color: COLORS.primary },
-  tarjetasGrid: { flexDirection: 'row', gap: 10 },
-  tarjetaMini: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 14 },
-  tarjetaMiniLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
-  tarjetaMiniMonto: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
-  gastoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, marginBottom: 8, gap: 12 },
-  gastoIcono: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  gastoEmoji: { fontSize: 18 },
-  gastoInfo: { flex: 1 },
-  gastoDescripcion: { fontSize: 13, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 2 },
-  gastoFecha: { fontSize: 11, color: COLORS.textSecondary },
-  gastoMonto: { fontSize: 13, fontWeight: '600', color: COLORS.error },
-  estadoVacio: { alignItems: 'center', paddingVertical: 40 },
-  estadoVacioEmoji: { fontSize: 40, marginBottom: 12 },
-  estadoVacioTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 6 },
-  botonesFlotantes: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 12, alignItems: 'center' },
-  btnVozFlotante: { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContenido: { backgroundColor: COLORS.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 48, alignItems: 'center' },
-  modalHandleContenedor: { paddingVertical: 8, paddingHorizontal: 40, alignItems: 'center' },
-  modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, marginBottom: 16 },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarTexto: { fontSize: 13, fontWeight: '600', color: COLORS.white },
+  saludoTexto: { fontSize: 12, color: COLORS.textSecondary },
+  nombreTexto: { fontSize: 17, fontWeight: '600', color: COLORS.textPrimary },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+
+  // Balance card
+  balanceCardWrap: { marginHorizontal: 20, marginBottom: 20 },
+  balanceCard: {
+    borderRadius: 24,
+    padding: 24,
+    overflow: 'hidden',
+  },
+  circuloDecorativo: {
+    position: 'absolute',
+    top: -40,
+    right: -20,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  balanceRow1: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    letterSpacing: 1.6,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+  },
+  periodoChip: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  periodoChipTexto: { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
+  balanceMonto: {
+    fontSize: 42,
+    fontWeight: '300',
+    color: COLORS.white,
+    marginVertical: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  balanceSeparador: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  balanceSubRow: { flexDirection: 'row', alignItems: 'center' },
+  subSeparador: { width: 1, height: 36, backgroundColor: 'rgba(255,255,255,0.12)' },
+  subLabel: {
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  subMonto: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Secciones
+  seccion: { paddingHorizontal: 20, marginBottom: 24 },
+  seccionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  seccionTitulo: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
+  verTodo: { fontSize: 13, color: COLORS.textSecondary },
+
+  // Fila de categoría con barra
+  catRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 56,
+    marginBottom: 8,
+  },
+  catIcono: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catEmoji: { fontSize: 18 },
+  catInfo: { flex: 1, paddingHorizontal: 12 },
+  catNombre: { fontSize: 14, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 4 },
+  barraBg: { height: 4, borderRadius: 2, backgroundColor: COLORS.border, overflow: 'hidden' },
+  barraRelleno: { height: '100%', borderRadius: 2 },
+  catMonto: { fontSize: 13, color: COLORS.textPrimary, fontVariant: ['tabular-nums'] },
+  catPct: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+
+  // Fila de gasto reciente
+  gastoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+    paddingHorizontal: 0,
+  },
+  gastoIcono: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gastoEmoji: { fontSize: 20 },
+  gastoInfo: { flex: 1, paddingHorizontal: 12 },
+  gastoDescripcion: { fontSize: 14, fontWeight: '500', color: COLORS.textPrimary, marginBottom: 2 },
+  gastoSubRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  gastoCat: { fontSize: 12, color: COLORS.textSecondary },
+  gastoDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: COLORS.textMuted },
+  gastoFecha: { fontSize: 12, color: COLORS.textSecondary },
+  gastoMonto: { fontSize: 14, color: COLORS.coral, fontVariant: ['tabular-nums'] },
+  separadorItem: { height: 0.5, backgroundColor: COLORS.border },
+
+  // Estado vacío
+  estadoVacio: { alignItems: 'center', paddingVertical: 32 },
+  vacioEmoji: { fontSize: 36, marginBottom: 8 },
+  vacioTexto: { fontSize: 14, color: COLORS.textSecondary },
+
+  // FAB de voz
+  fabVozWrap: {
+    position: 'absolute',
+    right: 20,
+    alignItems: 'center',
+    zIndex: 80,
+  },
+  fabVozAnillo: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(108,99,255,0.2)',
+  },
+  fabVozBoton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(108,99,255,0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(108,99,255,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabVozLabel: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+    letterSpacing: 0.9,
+    marginTop: 4,
+  },
+
+  // Modal de voz
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContenido: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 48,
+    alignItems: 'center',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    marginBottom: 16,
+  },
   modalTitulo: { fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 28 },
-  modalBotonVoz: { marginBottom: 20, alignItems: 'center' },
-  btnCancelarModal: { paddingVertical: 10, paddingHorizontal: 32 },
-  btnCancelarTexto: { fontSize: 15, color: COLORS.textSecondary },
 });
