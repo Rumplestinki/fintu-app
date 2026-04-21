@@ -17,7 +17,8 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   const [estado, setEstado] = useState('idle'); // idle | grabando | procesando
   const [volumen, setVolumen] = useState(0);
 
-  const recorderRef = useRef(null);
+  const recorderRef    = useRef(null);
+  const estaGrabando   = useRef(false); // flag nativo para evitar doble disparo
   const recordingTimeoutRef = useRef(null);
 
   // Animaciones de ripple (2 anillos)
@@ -158,49 +159,61 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
   useEffect(() => {
     return () => {
       if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
+      estaGrabando.current = false;
       if (recorderRef.current) {
         recorderRef.current.stop().catch(() => {});
-        recorderRef.current = null;
       }
     };
   }, []);
 
   // ── Iniciar grabación ──
   const handlePressIn = async () => {
-    if (estado !== 'idle') return;
+    // Doble guardia: estado React + ref síncrono para evitar doble disparo en Android
+    if (estado !== 'idle' || estaGrabando.current) return;
+    estaGrabando.current = true;
+
     const permiso = await AudioModule.requestRecordingPermissionsAsync();
     if (!permiso.granted) {
+      estaGrabando.current = false;
       Alert.alert('Error', 'Necesitamos permiso de micrófono.');
       return;
     }
     try {
       hap.guardar();
-      const recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
-      recorder.onRecordingStatusUpdate = (status) => {
-        if (status.metering !== undefined) {
-          const db = status.metering;
-          const level = Math.max(0, (db + 60) / 50);
-          setVolumen(level);
-        }
-      };
-      recorderRef.current = recorder;
+
+      // Reutilizar la instancia existente o crear una nueva
+      let recorder = recorderRef.current;
+      if (!recorder) {
+        recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+        recorder.onRecordingStatusUpdate = (status) => {
+          if (status.metering !== undefined) {
+            const db = status.metering;
+            const level = Math.max(0, (db + 60) / 50);
+            setVolumen(level);
+          }
+        };
+        recorderRef.current = recorder;
+      }
+
       await recorder.prepareToRecordAsync({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
       await recorder.record();
       setEstado('grabando');
       recordingTimeoutRef.current = setTimeout(() => handlePressOut(), 30000);
     } catch (error) {
       console.error('Error al iniciar recorder:', error);
+      estaGrabando.current = false;
       setEstado('idle');
     }
   };
 
   // ── Detener y procesar ──
   const handlePressOut = async () => {
-    if (estado !== 'grabando' || !recorderRef.current) return;
+    if (!estaGrabando.current || !recorderRef.current) return;
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
       recordingTimeoutRef.current = null;
     }
+    estaGrabando.current = false;
     try {
       hap.suave();
       setEstado('procesando');
@@ -208,7 +221,6 @@ export default function BotonVoz({ onResultado, tamaño = 'normal' }) {
       const recorder = recorderRef.current;
       await recorder.stop();
       const audioUri = recorder.uri;
-      recorderRef.current = null;
       const datos = await procesarAudioConGemini(audioUri);
       setEstado('idle');
       onResultado(datos);
