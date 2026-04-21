@@ -1,4 +1,6 @@
-// /app/(tabs)/presupuesto.jsx
+// app/(tabs)/presupuesto.jsx
+// Pantalla de presupuestos — diseño Soft Dark Luxury con barras animadas
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -20,34 +22,44 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
 import { NOMBRES_MESES } from '../../utils/fecha';
-import { formatMXN } from '../../utils/formato';
+import { formatMXN, hexToRgba } from '../../utils/formato';
 import { obtenerPresupuestosMes, guardarPresupuesto, eliminarPresupuesto } from '../../services/presupuestos';
 import { obtenerGastosMes, calcularPeriodo } from '../../services/gastos';
 import { supabase } from '../../services/supabase';
 import { hap } from '../../services/haptics';
 import Toast from '../../components/Toast';
 
-// ──────────────────────────────────────────
-// Barra de progreso animada de una categoría
-// ──────────────────────────────────────────
+// ─── BARRA DE PROGRESO ANIMADA ────────────────────────────
 function BarraPresupuesto({ gastado, limite, delay = 0 }) {
   const porcentaje = limite > 0 ? Math.min((gastado / limite) * 100, 100) : 0;
-  const anchoAnim = useRef(new Animated.Value(0)).current;
+  const anchoAnim  = useRef(new Animated.Value(0)).current;
+  const parpadeoAnim = useRef(new Animated.Value(1)).current;
 
+  // Color semántico según porcentaje
   const colorBarra =
-    porcentaje >= 100 ? COLORS.error :
-    porcentaje >= 80  ? COLORS.warning :
-    COLORS.primary;
+    porcentaje >= 90 ? COLORS.error :
+    porcentaje >= 70 ? COLORS.warning :
+    COLORS.success;
 
   useEffect(() => {
     anchoAnim.setValue(0);
     Animated.timing(anchoAnim, {
       toValue: porcentaje,
-      duration: 700,
-      delay: delay,
+      duration: 600,
+      delay,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
+
+    // Parpadeo cuando supera el 100%
+    if (porcentaje >= 100) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(parpadeoAnim, { toValue: 0.4, duration: 400, useNativeDriver: true }),
+          Animated.timing(parpadeoAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        ])
+      ).start();
+    }
   }, [porcentaje]);
 
   return (
@@ -57,11 +69,9 @@ function BarraPresupuesto({ gastado, limite, delay = 0 }) {
           style={[
             styles.barraRelleno,
             {
-              width: anchoAnim.interpolate({
-                inputRange: [0, 100],
-                outputRange: ['0%', '100%'],
-              }),
+              width: anchoAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
               backgroundColor: colorBarra,
+              opacity: porcentaje >= 100 ? parpadeoAnim : 1,
             },
           ]}
         />
@@ -73,9 +83,24 @@ function BarraPresupuesto({ gastado, limite, delay = 0 }) {
   );
 }
 
-// ──────────────────────────────────────────
-// Pantalla principal de presupuestos
-// ──────────────────────────────────────────
+// ─── DONUT CHART (sin SVG, usando vistas circulares) ─────
+function DonutChart({ porcentaje }) {
+  const pct = Math.min(porcentaje, 100);
+  const colorProgreso =
+    pct >= 90 ? COLORS.error :
+    pct >= 70 ? COLORS.warning :
+    COLORS.primary;
+
+  // Mensaje de estado
+  let mensajeEstado = '✓ ¡Vas muy bien!';
+  let colorEstado = COLORS.success;
+  if (pct >= 90) { mensajeEstado = '🔴 Límite cerca'; colorEstado = COLORS.error; }
+  else if (pct >= 70) { mensajeEstado = '⚠ Cuidado'; colorEstado = COLORS.warning; }
+
+  return { colorProgreso, mensajeEstado, colorEstado };
+}
+
+// ─── PANTALLA PRINCIPAL ───────────────────────────────────
 export default function PresupuestoScreen() {
   const insets = useSafeAreaInsets();
 
@@ -88,25 +113,18 @@ export default function PresupuestoScreen() {
   const [categoriaEditando, setCategoriaEditando] = useState(null);
   const [limiteInput, setLimiteInput] = useState('');
   const [guardando, setGuardando] = useState(false);
-
   const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
-
-  const barraGeneralAnim = useRef(new Animated.Value(0)).current;
 
   // Toast
   const [toastMensaje, setToastMensaje] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTipo, setToastTipo] = useState('exito');
 
-  // ──────────────────────────────────────────
-  // Cargar presupuestos y gastos del mes
-  // ──────────────────────────────────────────
+  // ── Cargar presupuestos y gastos ──
   async function cargarDatos() {
     try {
       setCargando(true);
-
       const { data: { user } } = await supabase.auth.getUser();
-
       const { data: perfil } = await supabase
         .from('users')
         .select('dia_corte')
@@ -114,20 +132,18 @@ export default function PresupuestoScreen() {
         .single();
 
       const diaCorte = perfil?.dia_corte || 1;
-
       const { inicio, fin } = calcularPeriodo(diaCorte, 0);
       const [anioIni, mesIni, diaIni] = inicio.split('-').map(Number);
       const [anioFin, mesFin, diaFin] = fin.split('-').map(Number);
-
       const budgetMonth = mesIni;
-      const budgetYear = anioIni;
+      const budgetYear  = anioIni;
 
       let labelPeriodo = `${NOMBRES_MESES[budgetMonth - 1]} ${budgetYear}`;
       let rangoPeriodo = '';
       if (diaCorte > 1) {
-        const mesFinCorto = NOMBRES_MESES[mesFin - 1].substring(0, 3);
-        const mesIniCorto = NOMBRES_MESES[mesIni - 1].substring(0, 3);
-        rangoPeriodo = `(${diaIni} ${mesIniCorto} – ${diaFin} ${mesFinCorto})`;
+        const mIni = NOMBRES_MESES[mesIni - 1].substring(0, 3);
+        const mFin = NOMBRES_MESES[mesFin - 1].substring(0, 3);
+        rangoPeriodo = `(${diaIni} ${mIni} – ${diaFin} ${mFin})`;
       }
       setInfoPeriodo({ label: labelPeriodo, rango: rangoPeriodo, mes: budgetMonth, anio: budgetYear });
 
@@ -144,7 +160,6 @@ export default function PresupuestoScreen() {
         totales[cid] = (totales[cid] || 0) + parseFloat(gasto.monto);
       }
       setGastosPorCategoria(totales);
-
     } catch (e) {
       console.error('Error cargando presupuestos:', e);
       mostrarToast('No se pudieron cargar los datos', 'error');
@@ -153,11 +168,7 @@ export default function PresupuestoScreen() {
     }
   }
 
-  useFocusEffect(
-    useCallback(() => {
-      cargarDatos();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { cargarDatos(); }, []));
 
   const mostrarToast = (mensaje, tipo = 'exito') => {
     setToastMensaje(mensaje);
@@ -166,32 +177,17 @@ export default function PresupuestoScreen() {
     setTimeout(() => setToastVisible(true), 50);
   };
 
-  // ──────────────────────────────────────────
-  // Calcular totales generales
-  // ──────────────────────────────────────────
+  // Totales generales
   const totalPresupuestado = presupuestos.reduce((sum, p) => sum + parseFloat(p.limite), 0);
   const totalGastado = Object.values(gastosPorCategoria).reduce((sum, v) => sum + v, 0);
   const porcentajeGeneral = totalPresupuestado > 0
     ? Math.min(Math.round((totalGastado / totalPresupuestado) * 100), 100)
     : 0;
 
-  useEffect(() => {
-    if (!cargando && totalPresupuestado > 0) {
-      barraGeneralAnim.setValue(0);
-      Animated.timing(barraGeneralAnim, {
-        toValue: porcentajeGeneral,
-        duration: 900,
-        delay: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [cargando, porcentajeGeneral]);
+  const { colorProgreso, mensajeEstado, colorEstado } = DonutChart({ porcentaje: porcentajeGeneral });
 
   function abrirModal(categoria) {
-    const presupuestoExistente = presupuestos.find(
-      (p) => p.categoria_id === categoria.dbId
-    );
+    const presupuestoExistente = presupuestos.find(p => p.categoria_id === categoria.dbId);
     setCategoriaEditando(categoria);
     setLimiteInput(presupuestoExistente ? String(presupuestoExistente.limite) : '');
     setModalVisible(true);
@@ -204,21 +200,14 @@ export default function PresupuestoScreen() {
       mostrarToast('El monto debe ser mayor a $0', 'error');
       return;
     }
-
     try {
       setGuardando(true);
       await guardarPresupuesto(categoriaEditando.dbId, limite, infoPeriodo.mes, infoPeriodo.anio);
-
       setPresupuestos((prev) => {
-        const existe = prev.find((p) => p.categoria_id === categoriaEditando.dbId);
-        if (existe) {
-          return prev.map((p) =>
-            p.categoria_id === categoriaEditando.dbId ? { ...p, limite } : p
-          );
-        }
+        const existe = prev.find(p => p.categoria_id === categoriaEditando.dbId);
+        if (existe) return prev.map(p => p.categoria_id === categoriaEditando.dbId ? { ...p, limite } : p);
         return [...prev, { categoria_id: categoriaEditando.dbId, limite, mes: infoPeriodo.mes, anio: infoPeriodo.anio }];
       });
-
       hap.logro();
       setModalVisible(false);
       setTimeout(() => mostrarToast('Presupuesto guardado'), 300);
@@ -232,33 +221,19 @@ export default function PresupuestoScreen() {
   }
 
   function handleEliminar() {
-    const presupuesto = presupuestos.find(
-      (p) => p.categoria_id === categoriaEditando?.dbId
-    );
-    if (!presupuesto) {
-      setModalVisible(false);
-      return;
-    }
+    const presupuesto = presupuestos.find(p => p.categoria_id === categoriaEditando?.dbId);
+    if (!presupuesto) { setModalVisible(false); return; }
     hap.advertencia();
     setModalEliminarVisible(true);
   }
 
   async function ejecutarEliminacion() {
-    // CORREGIDO: null check antes de acceder a presupuesto.id
-    const presupuesto = presupuestos.find(
-      (p) => p.categoria_id === categoriaEditando?.dbId
-    );
-    if (!presupuesto) {
-      setModalEliminarVisible(false);
-      return;
-    }
-
+    const presupuesto = presupuestos.find(p => p.categoria_id === categoriaEditando?.dbId);
+    if (!presupuesto) { setModalEliminarVisible(false); return; }
     try {
       hap.error();
       await eliminarPresupuesto(presupuesto.id);
-      setPresupuestos((prev) =>
-        prev.filter((p) => p.categoria_id !== categoriaEditando.dbId)
-      );
+      setPresupuestos(prev => prev.filter(p => p.categoria_id !== categoriaEditando.dbId));
       setModalEliminarVisible(false);
       setModalVisible(false);
       setTimeout(() => mostrarToast('Presupuesto eliminado'), 300);
@@ -270,15 +245,15 @@ export default function PresupuestoScreen() {
 
   return (
     <View style={[styles.contenedor, { paddingTop: insets.top }]}>
+      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
+      {/* ── Cabecera ── */}
       <View style={styles.cabecera}>
-        <Text style={styles.titulo}>Presupuesto</Text>
+        <Text style={styles.titulo}>Presupuestos</Text>
         <Text style={styles.subtitulo}>
           {infoPeriodo.label} <Text style={styles.rangoTexto}>{infoPeriodo.rango}</Text>
         </Text>
       </View>
-
-      <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       {cargando ? (
         <View style={styles.contenedorCarga}>
@@ -286,41 +261,27 @@ export default function PresupuestoScreen() {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {/* Resumen general */}
+
+          {/* ── Card resumen global ── */}
           {totalPresupuestado > 0 && (
-            <View style={styles.resumenGeneral}>
-              <View style={styles.resumenFila}>
-                <Text style={styles.resumenLabel}>Presupuestado</Text>
-                <Text style={styles.resumenMonto}>{formatMXN(totalPresupuestado)}</Text>
+            <View style={styles.cardResumen}>
+              {/* Indicador circular */}
+              <View style={styles.donutWrap}>
+                <View style={[styles.donutOuter, { borderColor: COLORS.border }]}>
+                  <View style={[styles.donutInner, { borderColor: colorProgreso }]}>
+                    <Text style={[styles.donutPct, { color: colorProgreso }]}>{porcentajeGeneral}%</Text>
+                  </View>
+                </View>
               </View>
-              <View style={styles.resumenFila}>
-                <Text style={styles.resumenLabel}>Gastado</Text>
-                <Text style={[
-                  styles.resumenMonto,
-                  { color: porcentajeGeneral >= 100 ? COLORS.error : COLORS.textPrimary },
-                ]}>
-                  {formatMXN(totalGastado)}
+
+              {/* Datos al lado del donut */}
+              <View style={{ flex: 1, paddingLeft: 20 }}>
+                <Text style={styles.resumenMontos}>
+                  {formatMXN(totalGastado)} / {formatMXN(totalPresupuestado)}
                 </Text>
+                <Text style={[styles.resumenEstado, { color: colorEstado }]}>{mensajeEstado}</Text>
+                <Text style={styles.resumenLabel}>del presupuesto mensual</Text>
               </View>
-              <View style={styles.barraBg}>
-                <Animated.View
-                  style={[
-                    styles.barraRelleno,
-                    {
-                      width: barraGeneralAnim.interpolate({
-                        inputRange: [0, 100],
-                        outputRange: ['0%', '100%'],
-                      }),
-                      backgroundColor: porcentajeGeneral >= 100 ? COLORS.error
-                        : porcentajeGeneral >= 80 ? COLORS.warning
-                        : COLORS.primary,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.resumenPorcentaje}>
-                {porcentajeGeneral}% del presupuesto total usado
-              </Text>
             </View>
           )}
 
@@ -337,9 +298,9 @@ export default function PresupuestoScreen() {
 
           <Text style={styles.seccionTitulo}>Por categoría</Text>
 
-          {/* RENDIMIENTO: usar index directamente en lugar de CATEGORIAS.indexOf */}
+          {/* ── Cards de presupuesto ── */}
           {CATEGORIAS.map((categoria, index) => {
-            const presupuesto = presupuestos.find((p) => p.categoria_id === categoria.dbId);
+            const presupuesto = presupuestos.find(p => p.categoria_id === categoria.dbId);
             const gastado = gastosPorCategoria[categoria.dbId] || 0;
             const limite = presupuesto ? parseFloat(presupuesto.limite) : 0;
             const tieneLimite = !!presupuesto;
@@ -353,13 +314,12 @@ export default function PresupuestoScreen() {
                 <Pressable
                   style={[
                     styles.tarjetaCategoria,
-                    superado && styles.tarjetaSuperada,
                     tieneLimite && styles.tarjetaConBarra,
                   ]}
                   onPress={() => { hap.suave(); abrirModal(categoria); }}
                 >
                   <View style={styles.categoriaIzquierda}>
-                    <View style={[styles.iconoContenedor, { backgroundColor: categoria.color + '25' }]}>
+                    <View style={[styles.iconoContenedor, { backgroundColor: hexToRgba(categoria.color, 0.18) }]}>
                       <Text style={styles.icono}>{categoria.icono}</Text>
                     </View>
                     <View>
@@ -385,26 +345,32 @@ export default function PresupuestoScreen() {
                 </Pressable>
 
                 {tieneLimite && (
-                  <View style={[
-                    styles.barraIntegrada,
-                    superado && { borderTopWidth: 0, borderColor: COLORS.error + '60' },
-                  ]}>
-                    <BarraPresupuesto
-                      gastado={gastado}
-                      limite={limite}
-                      delay={index * 60}
-                    />
+                  <View style={[styles.barraIntegrada, superado && { borderTopColor: COLORS.error + '60' }]}>
+                    <BarraPresupuesto gastado={gastado} limite={limite} delay={index * 60} />
                   </View>
                 )}
               </View>
             );
           })}
 
-          <View style={{ height: 75 }} />
+          {/* Card punteada para agregar */}
+          <Pressable
+            style={styles.cardAgregar}
+            onPress={() => {
+              hap.suave();
+              // Abre el modal con primera categoría sin presupuesto
+              const sinPresupuesto = CATEGORIAS.find(c => !presupuestos.find(p => p.categoria_id === c.dbId));
+              if (sinPresupuesto) abrirModal(sinPresupuesto);
+            }}
+          >
+            <Text style={styles.cardAgregarTexto}>+ Agregar presupuesto</Text>
+          </Pressable>
+
+          <View style={{ height: 80 }} />
         </ScrollView>
       )}
 
-      {/* ── MODAL EDITAR PRESUPUESTO ── */}
+      {/* ── Modal editar presupuesto ── */}
       <Modal
         visible={modalVisible}
         transparent
@@ -413,12 +379,12 @@ export default function PresupuestoScreen() {
       >
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <Pressable style={styles.modalContenido}>
+            <Pressable style={styles.modalContenido} onPress={() => {}}>
               <View style={styles.modalHandle} />
 
               {categoriaEditando && (
                 <View style={styles.modalHeader}>
-                  <View style={[styles.iconoContenedor, { backgroundColor: categoriaEditando.color + '25' }]}>
+                  <View style={[styles.iconoContenedor, { backgroundColor: hexToRgba(categoriaEditando.color, 0.18) }]}>
                     <Text style={styles.icono}>{categoriaEditando.icono}</Text>
                   </View>
                   <Text style={styles.modalTitulo}>{categoriaEditando.nombre}</Text>
@@ -426,7 +392,6 @@ export default function PresupuestoScreen() {
               )}
 
               <Text style={styles.modalLabel}>Límite mensual</Text>
-
               <View style={styles.inputContenedor}>
                 <Text style={styles.inputPrefijo}>$</Text>
                 <TextInput
@@ -441,16 +406,14 @@ export default function PresupuestoScreen() {
               </View>
 
               <View style={styles.modalBotones}>
-                {presupuestos.find((p) => p.categoria_id === categoriaEditando?.dbId) && (
+                {presupuestos.find(p => p.categoria_id === categoriaEditando?.dbId) && (
                   <Pressable style={styles.botonEliminar} onPress={handleEliminar}>
                     <Ionicons name="trash-outline" size={18} color={COLORS.error} />
                   </Pressable>
                 )}
-
                 <Pressable style={styles.botonCancelar} onPress={() => setModalVisible(false)}>
                   <Text style={styles.botonCancelarTexto}>Cancelar</Text>
                 </Pressable>
-
                 <Pressable style={styles.botonGuardar} onPress={handleGuardar} disabled={guardando}>
                   {guardando ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -464,7 +427,7 @@ export default function PresupuestoScreen() {
         </Pressable>
       </Modal>
 
-      {/* Modal Confirmación Eliminación */}
+      {/* Modal confirmación eliminación */}
       <Modal
         visible={modalEliminarVisible}
         transparent
@@ -488,17 +451,13 @@ export default function PresupuestoScreen() {
               >
                 <Text style={styles.modalEliminarBtnCancelarTxt}>Cancelar</Text>
               </Pressable>
-              <Pressable
-                style={styles.modalEliminarBtnConfirmar}
-                onPress={ejecutarEliminacion}
-              >
+              <Pressable style={styles.modalEliminarBtnConfirmar} onPress={ejecutarEliminacion}>
                 <Text style={styles.modalEliminarBtnConfirmarTxt}>Eliminar</Text>
               </Pressable>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
-
     </View>
   );
 }
@@ -506,134 +465,206 @@ export default function PresupuestoScreen() {
 const styles = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: COLORS.background },
   cabecera: { paddingHorizontal: 20, paddingVertical: 16 },
-  titulo: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '700' },
-  subtitulo: { color: COLORS.textSecondary, fontSize: 14, marginTop: 2 },
-  rangoTexto: { fontSize: 12, color: COLORS.textSecondary, opacity: 0.7 },
+  titulo: { color: COLORS.textPrimary, fontSize: 22, fontWeight: '600' },
+  subtitulo: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  rangoTexto: { fontSize: 12, color: COLORS.textMuted },
   contenedorCarga: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingHorizontal: 20, paddingBottom: 20 },
+
+  // Card resumen con donut
+  cardResumen: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  donutWrap: { alignItems: 'center', justifyContent: 'center' },
+  donutOuter: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  donutPct: { fontSize: 16, fontWeight: '600' },
+  resumenMontos: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 4 },
+  resumenEstado: { fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  resumenLabel: { fontSize: 12, color: COLORS.textMuted },
 
   // Empty state
   emptyState: {
     alignItems: 'center',
     paddingVertical: 32,
-    paddingHorizontal: 20,
     backgroundColor: COLORS.surface,
     borderRadius: 16,
     marginBottom: 24,
   },
   emptyEmoji: { fontSize: 40, marginBottom: 12 },
   emptyTitulo: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 6 },
-  emptySubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18 },
-
-  // Resumen
-  resumenGeneral: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 24 },
-  resumenFila: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  resumenLabel: { color: COLORS.textSecondary, fontSize: 14 },
-  resumenMonto: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '600' },
-  resumenPorcentaje: { color: COLORS.textSecondary, fontSize: 12, marginTop: 6, textAlign: 'right' },
+  emptySubtitulo: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20 },
 
   seccionTitulo: {
     color: COLORS.textSecondary,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
     marginBottom: 12,
   },
 
-  // CORREGIDO: overflow: 'hidden' solo una vez
+  // Tarjeta de categoría
   tarjetaWrapper: {
-    marginBottom: 12,
-    borderRadius: 12,
+    marginBottom: 8,
+    borderRadius: 16,
     overflow: 'hidden',
   },
-
+  tarjetaWrapperSuperado: {
+    borderWidth: 1,
+    borderColor: COLORS.error + '60',
+    borderRadius: 16,
+  },
   tarjetaCategoria: {
     backgroundColor: COLORS.surface,
-    padding: 14,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   tarjetaConBarra: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tarjetaSuperada: {},
-  barraIntegrada: { backgroundColor: COLORS.surface, paddingHorizontal: 14, paddingVertical: 10 },
+  barraIntegrada: { backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 10 },
   categoriaIzquierda: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  iconoContenedor: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  icono: { fontSize: 22 },
+  iconoContenedor: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  icono: { fontSize: 20 },
   categoriaNombre: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '500', marginBottom: 2 },
   categoriaDetalle: { color: COLORS.textSecondary, fontSize: 13 },
   categoriaDerecha: { flexDirection: 'row', alignItems: 'center' },
 
+  // Barra de progreso
   barraContenedor: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barraBg: { flex: 1, height: 8, backgroundColor: COLORS.border, borderRadius: 4, overflow: 'hidden' },
-  barraRelleno: { height: '100%', borderRadius: 4 },
+  barraBg: { flex: 1, height: 6, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden' },
+  barraRelleno: { height: '100%', borderRadius: 3 },
   baraPorcentaje: { fontSize: 12, fontWeight: '700', minWidth: 38, textAlign: 'right' },
 
-  tarjetaWrapperSuperado: {
-    borderWidth: 1,
-    borderColor: COLORS.error + '60',
-    borderRadius: 12,
+  // Card punteada para agregar
+  cardAgregar: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    marginBottom: 8,
   },
+  cardAgregarTexto: { fontSize: 14, color: COLORS.textMuted },
 
-  // Modal eliminación
-  modalEliminarOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
-  },
-  modalEliminarContenedor: {
-    backgroundColor: COLORS.surface, borderRadius: 20, padding: 24,
-    alignItems: 'center', width: '100%',
-  },
-  modalEliminarIcono: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: COLORS.error + '20',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-  },
-  modalEliminarTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
-  modalEliminarMensaje: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  modalEliminarBotones: { flexDirection: 'row', gap: 12, width: '100%' },
-  modalEliminarBtnCancelar: {
-    flex: 1, height: 48, borderRadius: 12,
-    borderWidth: 1.5, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalEliminarBtnCancelarTxt: { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
-  modalEliminarBtnConfirmar: {
-    flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: COLORS.error, alignItems: 'center', justifyContent: 'center',
-  },
-  modalEliminarBtnConfirmarTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
-
-  // Modal general
+  // Modales
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContenido: {
-    backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
   },
   modalHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   modalTitulo: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '600' },
   modalLabel: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 8 },
   inputContenedor: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.background, borderRadius: 12, paddingHorizontal: 16, marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 24,
   },
   inputPrefijo: { color: COLORS.textSecondary, fontSize: 24, marginRight: 4 },
   input: { flex: 1, color: COLORS.textPrimary, fontSize: 32, fontWeight: '600', paddingVertical: 16 },
   modalBotones: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   botonEliminar: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: COLORS.error + '20', justifyContent: 'center', alignItems: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.error + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   botonCancelar: {
-    flex: 1, height: 48, borderRadius: 12,
-    backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center',
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   botonCancelarTexto: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '500' },
   botonGuardar: {
-    flex: 2, height: 48, borderRadius: 12,
-    backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center',
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   botonGuardarTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  modalEliminarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  modalEliminarContenedor: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalEliminarIcono: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.error + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalEliminarTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
+  modalEliminarMensaje: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  modalEliminarBotones: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalEliminarBtnCancelar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalEliminarBtnCancelarTxt: { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
+  modalEliminarBtnConfirmar: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalEliminarBtnConfirmarTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
