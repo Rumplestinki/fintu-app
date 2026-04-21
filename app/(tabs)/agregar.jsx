@@ -1,5 +1,5 @@
 // app/(tabs)/agregar.jsx
-// Pantalla para registrar un nuevo gasto manualmente
+// Pantalla para registrar un nuevo gasto — diseño Soft Dark Luxury
 
 import React, { useState, useCallback, useRef } from 'react';
 import {
@@ -16,56 +16,56 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { hap } from '../../services/haptics';
+import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../constants/colors';
 import { CATEGORIAS } from '../../constants/categorias';
+import { hexToRgba } from '../../utils/formato';
 import { registrarGasto as crearGasto } from '../../services/gastos';
 import { useAuth } from '../../hooks/useAuth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { verificarPresupuestos } from '../../services/notificaciones';
-import BotonFintu from '../../components/BotonFintu';
 import Toast from '../../components/Toast';
 import { formatearFechaISO, formatearFechaLegible } from '../../utils/fecha';
 
-// ─── COMPONENTE: CATEGORIA ANIMADA ────────────────────────
-
+// ─── COMPONENTE: CATEGORÍA ANIMADA ────────────────────────
 function CategoriaAnimada({ cat, seleccionada, onPress }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
-    // Animación de rebote (spring)
-    Animated.sequence([
-      Animated.spring(scaleAnim, { 
-        toValue: 1.12, 
-        useNativeDriver: true, 
-        speed: 50, 
-        bounciness: 8 
-      }),
-      Animated.spring(scaleAnim, { 
-        toValue: 1, 
-        useNativeDriver: true, 
-        speed: 20, 
-        bounciness: 4 
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 1.08,
+      useNativeDriver: true,
+      friction: 4,
+      tension: 80,
+    }).start(() => {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+      }).start();
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onPress();
   };
 
   return (
-    <Animated.View style={{ width: '30%', transform: [{ scale: scaleAnim }] }}>
+    <Animated.View style={[estilos.categoriaWrap, { transform: [{ scale: scaleAnim }] }]}>
       <TouchableOpacity
-        style={[
-          estilos.categoriaBtn,
-          seleccionada && {
-            backgroundColor: cat.color + '30',
-            borderColor: cat.color,
-          },
-        ]}
+        style={estilos.categoriaBtn}
         onPress={handlePress}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
       >
-        <Text style={estilos.categoriaIcono}>{cat.icono}</Text>
-        <Text style={[estilos.categoriaNombre, seleccionada && { color: cat.color }]}>
+        {/* Círculo del ícono */}
+        <View style={[
+          estilos.categoriaCirculo,
+          seleccionada
+            ? { backgroundColor: hexToRgba('#6C63FF', 0.2), borderWidth: 2, borderColor: COLORS.primary }
+            : { backgroundColor: hexToRgba(cat.color, 0.18) },
+        ]}>
+          <Text style={estilos.categoriaEmoji}>{cat.icono}</Text>
+        </View>
+        {/* Label */}
+        <Text style={[estilos.categoriaNombre, seleccionada && { color: COLORS.primary, fontWeight: '500' }]}>
           {cat.nombre}
         </Text>
       </TouchableOpacity>
@@ -73,8 +73,43 @@ function CategoriaAnimada({ cat, seleccionada, onPress }) {
   );
 }
 
-// ─── COMPONENTE PRINCIPAL ─────────────────────────────────
+// ─── COMPONENTE: TECLA DEL TECLADO ───────────────────────
+function Tecla({ tecla, onPress }) {
+  const bgAnim = useRef(new Animated.Value(0)).current;
 
+  const handlePressIn = () => {
+    Animated.timing(bgAnim, { toValue: 1, duration: 80, useNativeDriver: false }).start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  const handlePressOut = () => {
+    Animated.timing(bgAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
+    onPress(tecla);
+  };
+
+  const bgColor = bgAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [COLORS.surface, COLORS.surfaceLight],
+  });
+
+  return (
+    <Animated.View style={[estilos.tecla, { backgroundColor: bgColor }]}>
+      <TouchableOpacity
+        style={estilos.teclaInner}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={1}
+      >
+        {tecla === '⌫' ? (
+          <Text style={estilos.teclaBorrarTxt}>⌫</Text>
+        ) : (
+          <Text style={estilos.teclaTxt}>{tecla}</Text>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ─── COMPONENTE PRINCIPAL ─────────────────────────────────
 export default function AgregarGasto() {
   const { usuario } = useAuth();
   const insets = useSafeAreaInsets();
@@ -84,6 +119,10 @@ export default function AgregarGasto() {
   const [fecha, setFecha] = useState(formatearFechaISO(new Date()));
   const [guardando, setGuardando] = useState(false);
   const [mostrarPicker, setMostrarPicker] = useState(false);
+
+  // Animación del borde del input descripción al enfocar
+  const borderColorAnim = useRef(new Animated.Value(0)).current;
+  const inputRef = useRef(null);
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMensaje, setToastMensaje] = useState('');
@@ -109,79 +148,79 @@ export default function AgregarGasto() {
 
   // ── Teclado numérico ──
   const handleTecla = (tecla) => {
-    hap.suave();
     if (tecla === '⌫') {
       setMonto((prev) => prev.slice(0, -1));
       return;
     }
     if (tecla === '.' && monto.includes('.')) return;
     if (tecla === '.' && monto === '') return;
-    if (monto.length >= 10) return;
+    const partes = monto.split('.');
+    if (partes[1] && partes[1].length >= 2) return;
+    if (monto.replace('.', '').length >= 10) return;
     setMonto((prev) => prev + tecla);
   };
 
-  // ── Seleccionar categoría ──
-  const handleCategoria = (cat) => {
-    hap.suave();
-    setCategoriaSeleccionada(cat);
+  // ── Animación del borde al enfocar descripción ──
+  const handleFocusInput = () => {
+    Animated.timing(borderColorAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+  };
+  const handleBlurInput = () => {
+    Animated.timing(borderColorAnim, { toValue: 0, duration: 200, useNativeDriver: false }).start();
   };
 
+  const borderColor = borderColorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [COLORS.border, COLORS.primary],
+  });
+
   // ── Guardar gasto ──
-const handleGuardar = async () => {
-  if (!monto || parseFloat(monto) === 0) {
-    hap.error();
-    mostrarToast('Escribe el monto primero', 'error');
-    return;
-  }
-  if (!categoriaSeleccionada) {
-    hap.error();
-    mostrarToast('Elige una categoría', 'error');
-    return;
-  }
-
-  setGuardando(true);
-  try {
-    await crearGasto({
-      userId: usuario?.id,
-      monto: parseFloat(monto),
-      categoriaId: categoriaSeleccionada.dbId,
-      descripcion,
-      fecha,
-      origen: 'manual',
-    });
-
-    // ✅ Esperar resultado para mostrar alerta si excede presupuesto
-    const alertas = await verificarPresupuestos();
-    const alertaCritica = alertas?.find(
-      (a) => a.tipo === 'error' || a.tipo === 'advertencia'
-    );
-
-    hap.logro();
-
-    if (alertaCritica) {
-      // Mostrar alerta de presupuesto en lugar del toast genérico
-      mostrarToast(`⚠️ ${alertaCritica.mensaje}`, 'error');
-    } else {
-      mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
+  const handleGuardar = async () => {
+    if (!monto || parseFloat(monto) === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      mostrarToast('Escribe el monto primero', 'error');
+      return;
+    }
+    if (!categoriaSeleccionada) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      mostrarToast('Elige una categoría', 'error');
+      return;
     }
 
-    // ✅ Resetear guardando antes de navegar
-    setGuardando(false);
+    setGuardando(true);
+    try {
+      await crearGasto({
+        userId: usuario?.id,
+        monto: parseFloat(monto),
+        categoriaId: categoriaSeleccionada.dbId,
+        descripcion,
+        fecha,
+        origen: 'manual',
+      });
 
-    setTimeout(() => {
-      router.replace('/(tabs)/');
-    }, 2200);
+      const alertas = await verificarPresupuestos();
+      const alertaCritica = alertas?.find(a => a.tipo === 'error' || a.tipo === 'advertencia');
 
-  } catch (error) {
-    console.error('Error al guardar gasto:', error);
-    mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
-  } finally {
-    // ✅ Garantiza que guardando siempre vuelve a false
-    setGuardando(false);
-  }
-};
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-  // ─── RENDER ───────────────────────────────────────────────
+      if (alertaCritica) {
+        mostrarToast(`⚠️ ${alertaCritica.mensaje}`, 'error');
+      } else {
+        mostrarToast(`$${monto} en ${categoriaSeleccionada.nombre} guardado`);
+      }
+
+      setGuardando(false);
+      setTimeout(() => router.replace('/(tabs)/'), 2200);
+    } catch (error) {
+      console.error('Error al guardar gasto:', error);
+      mostrarToast('No se pudo guardar. Intenta de nuevo.', 'error');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const hayFecha = fecha !== formatearFechaISO(new Date()) &&
+                   fecha !== formatearFechaISO(new Date(Date.now() - 86400000));
+
   return (
     <KeyboardAvoidingView
       style={estilos.container}
@@ -190,149 +229,135 @@ const handleGuardar = async () => {
       <Toast visible={toastVisible} mensaje={toastMensaje} tipo={toastTipo} />
 
       <ScrollView
-        contentContainerStyle={estilos.scrollContent}
+        contentContainerStyle={[estilos.scrollContent, { paddingTop: insets.top + 12 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* ── Header ── */}
-        <View style={[estilos.header, { paddingTop: insets.top + 12 }]}>
-          <TouchableOpacity style={estilos.btnCancelar} onPress={() => router.back()}>
-            <Text style={estilos.txtCancelar}>✕</Text>
+        <View style={estilos.header}>
+          <TouchableOpacity style={estilos.btnBack} onPress={() => router.back()}>
+            <Text style={estilos.btnBackTxt}>←</Text>
           </TouchableOpacity>
           <Text style={estilos.titulo}>Nuevo gasto</Text>
-          <View style={{ width: 36 }} />
+          <View style={{ width: 40 }} />
         </View>
 
         {/* ── Display del monto ── */}
         <View style={estilos.montoContainer}>
-          <Text style={estilos.montoLabel}>¿Cuánto gastaste?</Text>
           <Text style={[estilos.montoDisplay, !monto && estilos.montoPlaceholder]}>
-            {monto ? `$${monto}` : '$0'}
+            <Text style={estilos.montoSimbolo}>$</Text>
+            {monto || '0.00'}
           </Text>
-          <Text style={estilos.monedaLabel}>MXN</Text>
         </View>
 
         {/* ── Teclado numérico ── */}
         <View style={estilos.teclado}>
-          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map((tecla) => (
-            <TouchableOpacity
-              key={tecla}
-              style={[estilos.tecla, tecla === '⌫' && estilos.teclaBorrar]}
-              onPress={() => handleTecla(tecla)}
-              activeOpacity={0.7}
-            >
-              <Text style={[estilos.teclaTxt, tecla === '⌫' && estilos.teclaBorrarTxt]}>
-                {tecla}
-              </Text>
-            </TouchableOpacity>
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((tecla) => (
+            <Tecla key={tecla} tecla={tecla} onPress={handleTecla} />
           ))}
         </View>
 
-        {/* ── Descripción ── */}
-        <View style={estilos.seccion}>
-          <Text style={estilos.seccionTitulo}>
-            Descripción <Text style={estilos.opcional}>(opcional)</Text>
-          </Text>
-          <TextInput
-            style={estilos.inputDescripcion}
-            placeholder="Ej: tacos de canasta, Uber al trabajo…"
-            placeholderTextColor={COLORS.textMuted}
-            value={descripcion}
-            onChangeText={setDescripcion}
-            maxLength={100}
-            returnKeyType="done"
-          />
-        </View>
-
-        {/* ── Categorías ── */}
-        <View style={estilos.seccion}>
-          <Text style={estilos.seccionTitulo}>Categoría</Text>
-          <View style={estilos.categoriasGrid}>
-            {CATEGORIAS.map((cat) => (
-              <CategoriaAnimada
-                key={cat.id}
-                cat={cat}
-                seleccionada={categoriaSeleccionada?.id === cat.id}
-                onPress={() => handleCategoria(cat)}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* ── Fecha ── */}
-        <View style={estilos.seccion}>
-          <Text style={estilos.seccionTitulo}>Fecha</Text>
-          <View style={estilos.fechaRow}>
-            <TouchableOpacity
-              style={[
-                estilos.fechaBtn,
-                fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaBtnActivo,
-              ]}
-              onPress={() => {
-                hap.suave();
-                setFecha(formatearFechaISO(new Date(Date.now() - 86400000)));
-              }}
-            >
-              <Text style={estilos.fechaBtnTxt}>Ayer</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                estilos.fechaBtn,
-                fecha === formatearFechaISO(new Date()) && estilos.fechaBtnActivo,
-              ]}
-              onPress={() => {
-                hap.suave();
-                setFecha(formatearFechaISO(new Date()));
-              }}
-            >
-              <Text style={estilos.fechaBtnTxt}>Hoy</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                estilos.fechaDisplay,
-                fecha !== formatearFechaISO(new Date()) &&
-                fecha !== formatearFechaISO(new Date(Date.now() - 86400000)) &&
-                estilos.fechaBtnActivo,
-              ]}
-              onPress={() => {
-                hap.suave();
-                setMostrarPicker(true);
-              }}
-            >
-              <Text style={estilos.fechaDisplayTxt}>
-                📅 {formatearFechaLegible(fecha)}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {mostrarPicker && (
-            <DateTimePicker
-              value={new Date(fecha + 'T12:00:00')}
-              mode="date"
-              display="default"
-              maximumDate={new Date()}
-              onChange={(evento, fechaSeleccionada) => {
-                setMostrarPicker(false);
-                if (evento.type === 'dismissed') return;
-                if (fechaSeleccionada) {
-                  setFecha(formatearFechaISO(fechaSeleccionada));
-                  hap.suave();
-                }
-              }}
+        {/* ── Selector de categoría (4 columnas) ── */}
+        <View style={estilos.categoriasGrid}>
+          {CATEGORIAS.map((cat) => (
+            <CategoriaAnimada
+              key={cat.id}
+              cat={cat}
+              seleccionada={categoriaSeleccionada?.id === cat.id}
+              onPress={() => setCategoriaSeleccionada(cat)}
             />
-          )}
+          ))}
         </View>
 
-        {/* ── Botón Guardar Premium ── */}
-        <BotonFintu
-          label={monto && categoriaSeleccionada ? `Guardar $${monto}` : 'Guardar gasto'}
+        {/* ── Input descripción ── */}
+        <View style={estilos.descripcionWrap}>
+          <Animated.View style={[estilos.inputBorder, { borderBottomColor: borderColor }]}>
+            <TextInput
+              ref={inputRef}
+              style={estilos.inputDescripcion}
+              placeholder="¿En qué gastaste?"
+              placeholderTextColor={COLORS.textMuted}
+              value={descripcion}
+              onChangeText={setDescripcion}
+              onFocus={handleFocusInput}
+              onBlur={handleBlurInput}
+              maxLength={100}
+              returnKeyType="done"
+            />
+          </Animated.View>
+        </View>
+
+        {/* ── Chips de fecha ── */}
+        <View style={estilos.fechaRow}>
+          {/* Hoy */}
+          <TouchableOpacity
+            style={[estilos.fechaChip, fecha === formatearFechaISO(new Date()) && estilos.fechaChipActivo]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFecha(formatearFechaISO(new Date())); }}
+          >
+            <Text style={[estilos.fechaChipTxt, fecha === formatearFechaISO(new Date()) && estilos.fechaChipTxtActivo]}>
+              Hoy
+            </Text>
+          </TouchableOpacity>
+
+          {/* Ayer */}
+          <TouchableOpacity
+            style={[estilos.fechaChip, fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaChipActivo]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFecha(formatearFechaISO(new Date(Date.now() - 86400000))); }}
+          >
+            <Text style={[estilos.fechaChipTxt, fecha === formatearFechaISO(new Date(Date.now() - 86400000)) && estilos.fechaChipTxtActivo]}>
+              Ayer
+            </Text>
+          </TouchableOpacity>
+
+          {/* Fecha personalizada */}
+          <TouchableOpacity
+            style={[estilos.fechaChip, estilos.fechaChipFlex, hayFecha && estilos.fechaChipActivo]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMostrarPicker(true); }}
+          >
+            <Text style={[estilos.fechaChipTxt, hayFecha && estilos.fechaChipTxtActivo]}>
+              📅 {hayFecha ? formatearFechaLegible(fecha) : 'Fecha'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {mostrarPicker && (
+          <DateTimePicker
+            value={new Date(fecha + 'T12:00:00')}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={(evento, fechaSeleccionada) => {
+              setMostrarPicker(false);
+              if (evento.type === 'dismissed') return;
+              if (fechaSeleccionada) {
+                setFecha(formatearFechaISO(fechaSeleccionada));
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+          />
+        )}
+
+        {/* ── Botón Guardar ── */}
+        <TouchableOpacity
+          style={[
+            estilos.btnGuardar,
+            (!monto || !categoriaSeleccionada) && estilos.btnGuardarDeshabilitado,
+          ]}
           onPress={handleGuardar}
-          deshabilitado={!monto || !categoriaSeleccionada}
-          cargando={guardando}
-          estilo={{ marginHorizontal: 20, marginTop: 8 }}
-        />
+          disabled={!monto || !categoriaSeleccionada || guardando}
+          activeOpacity={0.85}
+        >
+          {guardando ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={[
+              estilos.btnGuardarTxt,
+              (!monto || !categoriaSeleccionada) && estilos.btnGuardarTxtDeshabilitado,
+            ]}>
+              {monto && categoriaSeleccionada ? `Guardar $${monto}` : 'Guardar gasto'}
+            </Text>
+          )}
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -342,13 +367,8 @@ const handleGuardar = async () => {
 
 // ─── ESTILOS ──────────────────────────────────────────────
 const estilos = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    paddingBottom: 80,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  scrollContent: { paddingBottom: 80 },
 
   // Header
   header: {
@@ -356,200 +376,162 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 8,
   },
-  btnCancelar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  btnBack: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  txtCancelar: {
-    color: COLORS.textSecondary,
-    fontSize: 16,
-  },
-  titulo: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '600',
-  },
+  btnBackTxt: { fontSize: 20, color: COLORS.textSecondary },
+  titulo: { fontSize: 20, fontWeight: '600', color: COLORS.textPrimary },
 
   // Monto
   montoContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
-  montoLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginBottom: 8,
-  },
+  montoSimbolo: { fontSize: 28, fontWeight: '300', color: COLORS.textPrimary },
   montoDisplay: {
+    fontSize: 48,
+    fontWeight: '300',
     color: COLORS.textPrimary,
-    fontSize: 56,
-    fontWeight: '700',
-    letterSpacing: -2,
+    fontVariant: ['tabular-nums'],
   },
-  montoPlaceholder: {
-    color: COLORS.textMuted,
-  },
-  monedaLabel: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    marginTop: 4,
-  },
+  montoPlaceholder: { color: COLORS.textMuted },
 
-  // Teclado
+  // Teclado numérico
   teclado: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 32,
-    gap: 12,
-    justifyContent: 'center',
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    gap: 8,
+    marginBottom: 20,
   },
   tecla: {
-    width: '28%',
-    aspectRatio: 1.8,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
+    width: '30%',
+    height: 64,
+    borderRadius: 16,
+    overflow: 'hidden',
+    flexGrow: 1,
+  },
+  teclaInner: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  teclaBorrar: {
-    backgroundColor: COLORS.surfaceLight,
-  },
   teclaTxt: {
+    fontSize: 26,
+    fontWeight: '400',
     color: COLORS.textPrimary,
-    fontSize: 22,
-    fontWeight: '500',
   },
   teclaBorrarTxt: {
+    fontSize: 22,
     color: COLORS.textSecondary,
-    fontSize: 20,
   },
 
-  // Secciones
-  seccion: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  seccionTitulo: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  opcional: {
-    color: COLORS.textMuted,
-    fontWeight: '400',
-    textTransform: 'none',
-    letterSpacing: 0,
-  },
-
-  // Descripción
-  inputDescripcion: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: COLORS.textPrimary,
-    fontSize: 15,
-  },
-
-  // Categorías
+  // Categorías (4 columnas)
   categoriasGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    paddingHorizontal: 20,
+    gap: 0,
+    marginBottom: 16,
   },
-  categoriaBtn: {
-    width: '100%',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
+  categoriaWrap: {
+    width: '25%',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    paddingVertical: 8,
   },
-  categoriaIcono: {
-    fontSize: 24,
-    marginBottom: 4,
+  categoriaBtn: { alignItems: 'center', gap: 6 },
+  categoriaCirculo: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  categoriaEmoji: { fontSize: 24 },
   categoriaNombre: {
+    fontSize: 10,
     color: COLORS.textSecondary,
-    fontSize: 11,
-    fontWeight: '500',
     textAlign: 'center',
   },
 
-  // Fecha
-  fechaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  // Descripción
+  descripcionWrap: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
-  fechaBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    backgroundColor: COLORS.surface,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+  inputBorder: {
+    borderBottomWidth: 1,
   },
-  fechaBtnActivo: {
-    backgroundColor: COLORS.primary + '25',
-    borderColor: COLORS.primary,
-  },
-  fechaBtnTxt: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  fechaDisplay: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: COLORS.surface,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-  },
-  fechaDisplayTxt: {
+  inputDescripcion: {
     color: COLORS.textPrimary,
-    fontSize: 13,
+    fontSize: 16,
+    paddingBottom: 12,
+    backgroundColor: COLORS.transparent,
   },
 
-  // Botón guardar (se conservan estilos por si acaso, aunque BotonFintu usa los suyos)
+  // Chips de fecha
+  fechaRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 8,
+    marginBottom: 24,
+  },
+  fechaChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.transparent,
+  },
+  fechaChipFlex: { flex: 1, alignItems: 'center' },
+  fechaChipActivo: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  fechaChipTxt: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  fechaChipTxtActivo: {
+    color: COLORS.white,
+  },
+
+  // Botón guardar
   btnGuardar: {
     marginHorizontal: 20,
     marginTop: 8,
-    paddingVertical: 18,
-    backgroundColor: COLORS.primary,
+    height: 56,
     borderRadius: 16,
+    backgroundColor: COLORS.primary,
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 12,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
     elevation: 8,
   },
   btnGuardarDeshabilitado: {
     backgroundColor: COLORS.surfaceLight,
     shadowOpacity: 0,
     elevation: 0,
+    opacity: 0.6,
   },
   btnGuardarTxt: {
     color: COLORS.white,
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '600',
+  },
+  btnGuardarTxtDeshabilitado: {
+    color: COLORS.textMuted,
   },
 });
