@@ -20,8 +20,8 @@
     "expo-file-system": "~19.0.21",
     "expo-haptics": "~15.0.8",
     "expo-linear-gradient": "~15.0.8",
-    "expo-linking": "~8.0.11",
-    "expo-notifications": "~0.32.16",
+    "expo-linking": "~8.0.12",
+    "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.23",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
@@ -30,5 +30,8 @@
     "react-native-screens": "~4.16.0",
     "react-native-url-polyfill": "^3.0.0"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "postcss": "^8.5.31"
+  }
 }
